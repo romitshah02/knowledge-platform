@@ -9,7 +9,8 @@ import org.sunbird.common.dto.{Request, Response, ResponseHandler}
 import org.sunbird.graph.OntologyEngineContext
 import org.sunbird.graph.service.operation.NodeAsyncOperations
 
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.{Await, ExecutionContext, Future}
+import scala.concurrent.duration._
 import scala.jdk.CollectionConverters._
 
 object HealthCheckManager extends CassandraConnector with RedisConnector {
@@ -34,12 +35,8 @@ object HealthCheckManager extends CassandraConnector with RedisConnector {
 
     private def checkGraphHealth()(implicit oec: OntologyEngineContext, ec: ExecutionContext): Map[String, Any] = {
         try {
-            val futureNode = oec.graphService.upsertRootNode("domain", new Request())
-            if (futureNode.isCompleted) {
-                generateCheck(true, graphDBLabel)
-            } else {
-                generateCheck(false, graphDBLabel)
-            }
+            Await.result(oec.graphService.upsertRootNode("domain", new Request()), 5.seconds)
+            generateCheck(true, graphDBLabel)
         } catch {
             case e: Exception => generateCheck(false, graphDBLabel)
         }
