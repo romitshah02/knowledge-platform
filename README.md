@@ -129,6 +129,14 @@ mvn clean install -DskipTests -Poci   # Oracle Cloud Infrastructure
 
 ### Step 6 — Run a service
 
+> **Required:** Set [cloud storage environment variables](#cloud-storage-configuration) before starting any service. The `StorageModule` initializes eagerly on startup and the service will fail if the variables are empty. If you don't have real credentials, set placeholder values — storage will only fail when you actually upload/download content:
+> ```shell
+> export cloud_storage_type=azure
+> export cloud_storage_key=placeholder
+> export cloud_storage_secret=placeholder
+> export cloud_storage_container=placeholder
+> ```
+
 You can either run services individually or run Content, Taxonomy, and Assessment together via `knowlg-service`.
 
 #### Option A — Run an individual service

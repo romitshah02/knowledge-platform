@@ -58,10 +58,8 @@ public class StorageModule extends AbstractModule {
     @Provides
     @Singleton
     public IStorageService provideStorageService() {
-        String storageType = config.hasPath("cloud_storage_type")
-                ? config.getString("cloud_storage_type") : "azure";
-        String authTypeStr = config.hasPath("cloud_storage_auth_type")
-                ? config.getString("cloud_storage_auth_type").toUpperCase() : "ACCESS_KEY";
+        String storageType = getConfigOrEnv("cloud_storage_type", "azure");
+        String authTypeStr = getConfigOrEnv("cloud_storage_auth_type", "ACCESS_KEY").toUpperCase();
 
         // StorageType and AuthType are inner classes of StorageConfig in v2.0.0
         StorageConfig.StorageType storageTypeEnum = StorageConfig.StorageType.valueOf(storageType.toUpperCase());
@@ -71,19 +69,34 @@ public class StorageModule extends AbstractModule {
 
         // The 'storageKey' (Azure Account Name) is required even for OIDC
         // to construct the correct service URL (e.g. https://<account_name>.blob.core.windows.net)
-        String storageKey = config.hasPath("cloud_storage_key")
-                ? config.getString("cloud_storage_key") : "";
+        String storageKey = getConfigOrEnv("cloud_storage_key", "");
         builder.storageKey(storageKey);
 
         if (authType == StorageConfig.AuthType.ACCESS_KEY) {
             // Developer / local environment: use static secret from config
-            String storageSecret = config.hasPath("cloud_storage_secret")
-                    ? config.getString("cloud_storage_secret") : "";
+            String storageSecret = getConfigOrEnv("cloud_storage_secret", "");
             builder.storageSecret(storageSecret);
         }
         // For OIDC / IAM: the Azure SDK resolves credentials automatically via Workload Identity
         // or Managed Identity — no static secret needed.
 
         return StorageServiceFactory.getStorageService(builder.build());
+    }
+
+    /**
+     * Reads a value from Play config, falling back to an environment variable of the same name
+     * if the config value is empty. This allows {@code export cloud_storage_key=...} to work
+     * even when the packaged application.conf has an empty default.
+     */
+    private String getConfigOrEnv(String key, String defaultValue) {
+        String value = config.hasPath(key) ? config.getString(key) : "";
+        if (value != null && !value.isEmpty()) {
+            return value;
+        }
+        String envValue = System.getenv(key);
+        if (envValue != null && !envValue.isEmpty()) {
+            return envValue;
+        }
+        return defaultValue;
     }
 }
