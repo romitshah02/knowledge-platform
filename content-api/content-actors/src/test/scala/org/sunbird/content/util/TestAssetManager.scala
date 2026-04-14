@@ -5,6 +5,7 @@ import java.util
 
 import org.scalamock.scalatest.AsyncMockFactory
 import org.scalatest.{AsyncFlatSpec, Matchers}
+import org.sunbird.cloudstore.StorageService
 import org.sunbird.common.dto.{Property, Request}
 import org.sunbird.common.exception.ResponseCode
 import org.sunbird.graph.{GraphService, OntologyEngineContext}
@@ -16,6 +17,7 @@ import scala.concurrent.Future
 
 class TestAssetManager extends AsyncFlatSpec with Matchers with AsyncMockFactory {
   "AssetCopyManager" should "return copied node identifier when asset is copied" ignore {
+    implicit val ss: StorageService = mock[StorageService]
     implicit val oec: OntologyEngineContext = mock[OntologyEngineContext]
     val graphDB = mock[GraphService]
     (oec.graphService _).expects().returns(graphDB).anyNumberOfTimes()
@@ -25,7 +27,7 @@ class TestAssetManager extends AsyncFlatSpec with Matchers with AsyncMockFactory
     (graphDB.addNode(_: String, _: Node)).expects(*, *).returns(Future(getCopiedNode()))
     (graphDB.getNodeByUniqueId(_: String, _: String, _: Boolean, _: Request)).expects(*, *, *, *).returns(Future(getCopiedNode()))
     (graphDB.upsertNode(_: String, _: Node, _: Request)).expects(*, *, *).returns(Future(getCopiedNode()))
-    (graphDB.getNodeProperty(_: String, _: String, _: String)).expects(*, *, *).returns(Future(new Property("versionKey", new org.neo4j.driver.internal.value.StringValue("1234"))))
+    (graphDB.getNodeProperty(_: String, _: String, _: String)).expects(*, *, *).returns(Future(new Property("versionKey", "1234")))
     AssetCopyManager.copy(getCopyRequest()).map(resp => {
       assert(resp != null)
       assert(resp.getResponseCode == ResponseCode.OK)

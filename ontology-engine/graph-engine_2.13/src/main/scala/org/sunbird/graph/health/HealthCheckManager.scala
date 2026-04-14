@@ -60,10 +60,12 @@ object HealthCheckManager extends CassandraConnector with RedisConnector {
     }
 
     private def checkRedisHealth(): Map[String, Any] = {
+        if (!isEnabled)
+            return Map("name" -> redisLabel, "healthy" -> true, "msg" -> "Redis not configured — skipped")
         try {
             val jedis = getConnection
-            jedis.close()
-            generateCheck(true, redisLabel)
+            if (null != jedis) { jedis.close(); generateCheck(true, redisLabel) }
+            else generateCheck(false, redisLabel)
         } catch {
             case e: Exception => generateCheck(false, redisLabel)
         }

@@ -18,9 +18,9 @@ import org.sunbird.graph.OntologyEngineContext
 import org.sunbird.graph.dac.model.Node
 import org.sunbird.graph.nodes.DataNode
 import org.sunbird.graph.utils.NodeUtil
-import org.sunbird.managers.HierarchyManager
+import org.sunbird.managers.content.HierarchyManager
 import scala.jdk.CollectionConverters._
-import org.sunbird.managers.HierarchyManager.hierarchyPrefix
+import org.sunbird.managers.content.HierarchyManager.hierarchyPrefix
 import org.sunbird.telemetry.logger.TelemetryManager
 import org.sunbird.util.RequestUtil
 
@@ -63,11 +63,12 @@ class ContentActor @Inject() (implicit oec: OntologyEngineContext, ss: StorageSe
 	}
 
 	def create(request: Request): Future[Response] = {
-		populateDefaultersForCreation(request)
-		RequestUtil.restrictProperties(request)
-		DataNode.create(request, dataModifier).map(node => {
-			ResponseHandler.OK.put(ContentConstants.IDENTIFIER, node.getIdentifier).put("node_id", node.getIdentifier)
-				.put("versionKey", node.getMetadata.get("versionKey"))
+		populateDefaultersForCreation(request).flatMap(_ => {
+			RequestUtil.restrictProperties(request)
+			DataNode.create(request, dataModifier).map(node => {
+				ResponseHandler.OK.put(ContentConstants.IDENTIFIER, node.getIdentifier).put("node_id", node.getIdentifier)
+					.put("versionKey", node.getMetadata.get("versionKey"))
+			})
 		})
 	}
 
@@ -154,7 +155,7 @@ class ContentActor @Inject() (implicit oec: OntologyEngineContext, ss: StorageSe
 			if (null != node & StringUtils.isNotBlank(node.getObjectType))
 				request.getContext.put(ContentConstants.SCHEMA_NAME, node.getObjectType.toLowerCase())
 			UploadManager.upload(request, node)
-		}).flatMap(f => f)
+		}).flatten
 	}
 
 	def copy(request: Request): Future[Response] = {
@@ -214,7 +215,7 @@ class ContentActor @Inject() (implicit oec: OntologyEngineContext, ss: StorageSe
 			if (StringUtils.equalsAnyIgnoreCase(ContentConstants.PROCESSING, node.getMetadata.getOrDefault(ContentConstants.STATUS, "").asInstanceOf[String]))
 				throw new ClientException("ERR_NODE_ACCESS_DENIED", "Review Operation Can't Be Applied On Node Under Processing State")
 			else ReviewManager.review(request, node)
-		}).flatMap(f => f)
+		}).flatten
 	}
 
 	def publishContent(request: Request): Future[Response] = {
@@ -233,21 +234,54 @@ class ContentActor @Inject() (implicit oec: OntologyEngineContext, ss: StorageSe
 				throw new ClientException("ERR_NODE_ACCESS_DENIED", "Publish Operation Can't Be Applied On Node Under Processing State")
 			node.getMetadata.put(ContentConstants.LAST_PUBLISHED_BY, publisher)
 			PublishManager.publish(request, node)
-		}).flatMap(f => f)
+		}).flatten
 	}
 
-	def populateDefaultersForCreation(request: Request) = {
+	def populateDefaultersForCreation(request: Request): Future[Unit] = {
 		setDefaultsBasedOnMimeType(request, ContentParams.create.name)
 		setDefaultLicense(request)
 	}
 
-	private def setDefaultLicense(request: Request): Unit = {
+	private def setDefaultLicense(request: Request): Future[Unit] = {
 		if (StringUtils.isEmpty(request.getRequest.getOrDefault("license", "").asInstanceOf[String])) {
-			val cacheKey = "channel_" + request.getRequest.getOrDefault("channel", "").asInstanceOf[String] + "_license"
-			val defaultLicense = RedisCache.get(cacheKey, null, 0)
-			if (StringUtils.isNotEmpty(defaultLicense)) request.getRequest.put("license", defaultLicense)
-			else println("Default License is not available for channel: " + request.getRequest.getOrDefault("channel", "").asInstanceOf[String])
-		}
+			val channelId = request.getRequest.getOrDefault("channel", "").asInstanceOf[String]
+			val cacheKey = "channel_" + channelId + "_license"
+			var defaultLicense = ""
+            try {
+			    defaultLicense = RedisCache.get(cacheKey, null, 0)
+            } catch {
+                case e: Exception =>
+                    TelemetryManager.error("Error fetching license from Redis: " + e.getMessage, e)
+            }
+
+			if (StringUtils.isNotEmpty(defaultLicense)) {
+                request.getRequest.put("license", defaultLicense)
+                Future.successful(())
+            } else {
+                val readReq = new Request(request)
+                readReq.put(ContentConstants.IDENTIFIER, channelId)
+                readReq.put("fields", new util.ArrayList[String](){{ add("defaultLicense") }})
+                DataNode.read(readReq).map(node => {
+                    val license = node.getMetadata.getOrDefault("defaultLicense", "").asInstanceOf[String]
+                    if (StringUtils.isNotEmpty(license)) {
+                        request.getRequest.put("license", license)
+                        try {
+                            RedisCache.set(cacheKey, license, 0)
+                        } catch {
+                            case e: Exception =>
+                                TelemetryManager.error("Error setting license to Redis: " + e.getMessage, e)
+                        }
+                    } else {
+                        TelemetryManager.warn("Default License is not available for channel: " + channelId)
+                    }
+                }).recover {
+                    case e: Exception =>
+                        TelemetryManager.error("Error fetching channel from DB: " + e.getMessage, e)
+                }.map(_ => ())
+            }
+		} else {
+            Future.successful(())
+        }
 	}
 
 	def populateDefaultersForUpdation(request: Request) = {
@@ -277,8 +311,8 @@ class ContentActor @Inject() (implicit oec: OntologyEngineContext, ss: StorageSe
 			throw new ClientException("ERR_CONTENT_INVALID_FILE_NAME", "Please Provide Valid File Name.")
 		if (!preSignedObjTypes.contains(`type`))
 			throw new ClientException("ERR_INVALID_PRESIGNED_URL_TYPE", "Invalid pre-signed url type. It should be one of " + StringUtils.join(preSignedObjTypes, ","))
-		if(StringUtils.isNotBlank(filePath) && filePath.size > 100)
-			throw new ClientException("ERR_CONTENT_INVALID_FILE_PATH", "Please provide valid filepath of character length 100 or Less ")
+		if(StringUtils.isNotBlank(filePath) && filePath.size > ContentConstants.MAX_FILE_PATH_SIZE)
+			throw new ClientException("ERR_CONTENT_INVALID_FILE_PATH", "Please provide valid filepath of character length " + ContentConstants.MAX_FILE_PATH_SIZE + " or Less ")
 	}
 
 	def dataModifier(node: Node): Node = {
@@ -351,7 +385,7 @@ class ContentActor @Inject() (implicit oec: OntologyEngineContext, ss: StorageSe
 				val identifier: String = node.getIdentifier.replace(".img", "")
 				ResponseHandler.OK.put("node_id", identifier).put(ContentConstants.IDENTIFIER, identifier)
 			})
-		}).flatMap(f => f)
+		}).flatten
 	}
 
 }

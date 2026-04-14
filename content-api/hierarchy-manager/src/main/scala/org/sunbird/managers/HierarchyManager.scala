@@ -1,4 +1,4 @@
-package org.sunbird.managers
+package org.sunbird.managers.content
 
 import java.util
 import java.util.concurrent.CompletionException
@@ -21,7 +21,7 @@ import org.sunbird.graph.OntologyEngineContext
 import org.sunbird.graph.schema.{DefinitionNode, ObjectCategoryDefinition}
 import org.sunbird.schema.SchemaValidatorFactory
 import org.sunbird.schema.dto.ValidationResult
-import org.sunbird.utils.{HierarchyBackwardCompatibilityUtil, HierarchyConstants, HierarchyErrorCodes}
+import org.sunbird.utils.content.{HierarchyBackwardCompatibilityUtil, HierarchyConstants, HierarchyErrorCodes}
 
 import scala.annotation.tailrec
 
@@ -51,7 +51,9 @@ object HierarchyManager {
             val unitId = request.get("unitId").asInstanceOf[String]
             val rootNodeMap =  NodeUtil.serialize(rootNode, java.util.Arrays.asList("childNodes", "originData"), schemaName, schemaVersion)
             validateShallowCopied(rootNodeMap, "add", rootNode.getIdentifier.replaceAll(imgSuffix, ""))
-            if(!rootNodeMap.get("childNodes").asInstanceOf[Array[String]].toList.contains(unitId)) {
+            val childNodes = rootNodeMap.get("childNodes")
+            val childrenList: List[String] = getList(childNodes)
+            if(!childrenList.contains(unitId)) {
                 Future{ResponseHandler.ERROR(ResponseCode.RESOURCE_NOT_FOUND, ResponseCode.RESOURCE_NOT_FOUND.name(), "unitId " + unitId + " does not exist")}
             }else {
                 val hierarchyFuture = fetchHierarchy(request, rootNode.getIdentifier)
@@ -72,12 +74,12 @@ object HierarchyManager {
                                         response
                                     }
                                 })
-                            }).flatMap(f => f)
-                        }).flatMap(f => f)
+                            }).flatten
+                        }).flatten
                     }
-                }).flatMap(f => f)
+                }).flatten
             }
-        }).flatMap(f => f) recoverWith {case e: CompletionException => throw e.getCause}
+        }).flatten recoverWith {case e: CompletionException => throw e.getCause}
     }
 
     @throws[Exception]
@@ -88,7 +90,9 @@ object HierarchyManager {
             val unitId = request.get("unitId").asInstanceOf[String]
             val rootNodeMap =  NodeUtil.serialize(rootNode, java.util.Arrays.asList("childNodes", "originData"), schemaName, schemaVersion)
             validateShallowCopied(rootNodeMap, "remove", rootNode.getIdentifier.replaceAll(imgSuffix, ""))
-            if(!rootNodeMap.get("childNodes").asInstanceOf[Array[String]].toList.contains(unitId)) {
+            val childNodes = rootNodeMap.get("childNodes")
+            val childrenList: List[String] = getList(childNodes)
+            if(!childrenList.contains(unitId)) {
                 Future{ResponseHandler.ERROR(ResponseCode.RESOURCE_NOT_FOUND, ResponseCode.RESOURCE_NOT_FOUND.name(), "unitId " + unitId + " does not exist")}
             }else {
                 val hierarchyFuture = fetchHierarchy(request, rootNode.getIdentifier)
@@ -105,11 +109,11 @@ object HierarchyManager {
                                     response
                                 }
                             })
-                        }).flatMap(f => f)
+                        }).flatten
                     }
-                }).flatMap(f => f)
+                }).flatten
             }
-        }).flatMap(f => f) recoverWith {case e: CompletionException => throw e.getCause}
+        }).flatten recoverWith {case e: CompletionException => throw e.getCause}
     }
 
     @throws[Exception]
@@ -168,9 +172,9 @@ object HierarchyManager {
                             ResponseHandler.OK.put("content", metadata)
                         }
                     })
-                }).flatMap(f => f)
-            }).flatMap(f => f)
-        }).flatMap(f => f) recoverWith { case e: ResourceNotFoundException =>
+                }).flatten
+            }).flatten
+        }).flatten recoverWith { case e: ResourceNotFoundException =>
             val searchResponse = searchRootIdInElasticSearch(request.get("rootId").asInstanceOf[String])
             searchResponse.map(rootHierarchy => {
                 if(!rootHierarchy.isEmpty && StringUtils.isNotEmpty(rootHierarchy.asInstanceOf[util.HashMap[String, AnyRef]].get("identifier").asInstanceOf[String])){
@@ -195,13 +199,14 @@ object HierarchyManager {
                 } else {
                     Future(ResponseHandler.ERROR(ResponseCode.RESOURCE_NOT_FOUND, ResponseCode.RESOURCE_NOT_FOUND.name(), "rootId " + request.get("rootId") + " does not exist"))
                 }
-            }).flatMap(f => f)
+            }).flatten
         }
     }
 
     @throws[Exception]
     def getPublishedHierarchy(request: Request)(implicit ec: ExecutionContext, oec: OntologyEngineContext): Future[Response] = {
-        val redisHierarchy = RedisCache.get(hierarchyPrefix + request.get("rootId"))
+        val collectionCacheEnabled = Platform.getBoolean("collection.cache.enable", false)
+        val redisHierarchy = if (collectionCacheEnabled) RedisCache.get(hierarchyPrefix + request.get("rootId")) else ""
         val hierarchyFuture = if (StringUtils.isNotEmpty(redisHierarchy)) {
             Future(Map("content" -> JsonUtils.deserialize(redisHierarchy, classOf[java.util.Map[String, AnyRef]])).asJava)
         } else getCassandraHierarchy(request)
@@ -314,12 +319,14 @@ object HierarchyManager {
         val req = new Request(request)
         val leafNodes = request.get("children").asInstanceOf[java.util.List[String]]
         val childNodes = new java.util.ArrayList[String]()
-        childNodes.addAll(rootNode.getMetadata.get("childNodes").asInstanceOf[Array[String]].toList.asJava)
+        val nodes = rootNode.getMetadata.get("childNodes")
+        val nodesList: List[String] = getList(nodes)
+        childNodes.addAll(nodesList.asJava)
         if(operation.equalsIgnoreCase("add"))
             childNodes.addAll(leafNodes)
         if(operation.equalsIgnoreCase("remove"))
             childNodes.removeAll(leafNodes)
-        req.put("childNodes", childNodes.asScala.toList.distinct.toArray)
+        req.put("childNodes", childNodes.asScala.toList.distinct.asJava)
         req.getContext.put("identifier", rootNode.getIdentifier.replaceAll(imgSuffix, ""))
         req.getContext.put("skipValidation", java.lang.Boolean.TRUE)
         DataNode.update(req)
@@ -369,7 +376,7 @@ object HierarchyManager {
             req.put("hierarchy", ScalaJsonUtils.serialize(updatedHierarchy))
             req.put("identifier", rootNode.getIdentifier)
             oec.graphService.saveExternalProps(req)
-        }).flatMap(f => f).recoverWith {
+        }).flatten.recoverWith {
             case clientException: ClientException => if(clientException.getMessage.equalsIgnoreCase("Validation Errors")) {
                     Future(ResponseHandler.ERROR(ResponseCode.CLIENT_ERROR, ResponseCode.CLIENT_ERROR.name(), clientException.getMessages.asScala.mkString(",")))
                 } else throw clientException
@@ -418,7 +425,9 @@ object HierarchyManager {
             if (!ResponseHandler.checkError(response)) {
                 val hierarchyString = response.getResult.asScala.toMap.getOrElse("hierarchy", "").asInstanceOf[String]
                 if (StringUtils.isNotEmpty(hierarchyString)) {
-                    Future(JsonUtils.deserialize(hierarchyString, classOf[java.util.Map[String, AnyRef]]).asScala.toMap)
+                    val hierarchy = JsonUtils.deserialize(hierarchyString, classOf[java.util.Map[String, AnyRef]])
+                    HierarchyBackwardCompatibilityUtil.deserializeStringifiedLists(hierarchy)
+                    Future(hierarchy.asScala.toMap)
                 } else
                     Future(Map[String, AnyRef]())
             } else if (ResponseHandler.checkError(response) && response.getResponseCode.code() == 404 && Platform.config.hasPath("collection.image.migration.enabled") && Platform.config.getBoolean("collection.image.migration.enabled")) {
@@ -428,7 +437,9 @@ object HierarchyManager {
                     if (!ResponseHandler.checkError(response)) {
                         val hierarchyString = response.getResult.asScala.toMap.getOrElse("hierarchy", "").asInstanceOf[String]
                         if (StringUtils.isNotEmpty(hierarchyString)) {
-                            JsonUtils.deserialize(hierarchyString, classOf[java.util.Map[String, AnyRef]]).asScala.toMap
+                            val hierarchy = JsonUtils.deserialize(hierarchyString, classOf[java.util.Map[String, AnyRef]])
+                            HierarchyBackwardCompatibilityUtil.deserializeStringifiedLists(hierarchy)
+                            hierarchy.asScala.toMap
                         } else
                             Map[String, AnyRef]()
                     } else if (ResponseHandler.checkError(response) && response.getResponseCode.code() == 404)
@@ -440,7 +451,7 @@ object HierarchyManager {
                 Future(Map[String, AnyRef]())
             else
                 throw new ServerException("ERR_WHILE_FETCHING_HIERARCHY_FROM_CASSANDRA", "Error while fetching hierarchy from cassandra")
-        }).flatMap(f => f) recoverWith { case e: CompletionException => throw e.getCause }
+        }).flatten recoverWith { case e: CompletionException => throw e.getCause }
     }
 
 
@@ -468,9 +479,9 @@ object HierarchyManager {
                         } else
                             Future(Map[String, AnyRef]())
                     } else Future(Map[String, AnyRef]())
-                }).flatMap(f => f) recoverWith { case e: CompletionException => throw e.getCause }
+                }).flatten recoverWith { case e: CompletionException => throw e.getCause }
             }
-        }).flatMap(f => f) recoverWith { case e: CompletionException => throw e.getCause }
+        }).flatten recoverWith { case e: CompletionException => throw e.getCause }
     }
 
 
@@ -520,9 +531,9 @@ object HierarchyManager {
                     } else {
                         Future(new util.HashMap[String, AnyRef]())
                     }
-                }).flatMap(f => f)
+                }).flatten
             }
-        }).flatMap(f => f) recoverWith { case e: CompletionException => throw e.getCause }
+        }).flatten recoverWith { case e: CompletionException => throw e.getCause }
     }
 
     def searchRootIdInElasticSearch(rootId: String)(implicit ec: ExecutionContext): Future[util.Map[String, AnyRef]] = {
@@ -661,7 +672,7 @@ object HierarchyManager {
                     val updatedMap = leafNodeMap ++ imageLeafNodeMap
                     updatedMap.asJava
                 })
-            }).flatMap(f => f)
+            }).flatten
         } else {
             Future{new util.HashMap[String, AnyRef]()}
         }
@@ -711,5 +722,18 @@ object HierarchyManager {
         val configObjTypes: List[String] = outRelations.find(_.keySet.contains("children")).map(_.getOrElse("children", Map()).asInstanceOf[java.util.Map[String, AnyRef]].getOrDefault("objects", new util.ArrayList[String]()).asInstanceOf[java.util.List[String]].asScala.toList).getOrElse(List())
         if(configObjTypes.nonEmpty && !configObjTypes.contains(childNode.getOrDefault("objectType", "").asInstanceOf[String]))
             throw new ClientException("ERR_INVALID_CHILDREN", "Invalid Children objectType "+childNode.get("objectType")+" found for : "+childNode.get("identifier") + "| Please provide children having one of the objectType from "+ configObjTypes.asJava)
+    }
+    private def getList(value: Any): List[String] = {
+        value match {
+            case s: String =>
+                try {
+                    JsonUtils.deserialize(s, classOf[java.util.List[String]]).asScala.toList
+                } catch {
+                    case _: Exception => List()
+                }
+            case a: Array[String] => a.toList
+            case l: java.util.List[_] => l.asInstanceOf[java.util.List[String]].asScala.toList
+            case _ => List()
+        }
     }
 }

@@ -12,9 +12,9 @@ import org.sunbird.graph.OntologyEngineContext
 import org.sunbird.graph.nodes.DataNode
 import org.sunbird.graph.dac.model.Node
 import org.sunbird.graph.external.ExternalPropsManager
-import org.sunbird.managers.UpdateHierarchyManager.{fetchHierarchy, shouldImageBeDeleted}
+import org.sunbird.managers.content.UpdateHierarchyManager.{fetchHierarchy, shouldImageBeDeleted}
 import org.sunbird.telemetry.logger.TelemetryManager
-import org.sunbird.utils.{HierarchyConstants, HierarchyErrorCodes}
+import org.sunbird.utils.content.{HierarchyConstants, HierarchyErrorCodes}
 
 
 import scala.concurrent.{ExecutionContext, Future}
@@ -57,7 +57,7 @@ object DiscardManager {
     private def discardForCollection(node: Node, request: Request)(implicit executionContext: ExecutionContext, oec: OntologyEngineContext): Future[java.lang.Boolean] = {
         request.put(ContentConstants.IDENTIFIERS, if (node.getMetadata.containsKey(ContentConstants.PACKAGE_VERSION)) List(node.getIdentifier) else List(node.getIdentifier, node.getIdentifier + ContentConstants.IMAGE_SUFFIX))
         request.getContext.put(ContentConstants.SCHEMA_NAME, ContentConstants.COLLECTION_SCHEMA_NAME)
-        oec.graphService.deleteExternalProps(request).map(resp => DataNode.deleteNode(request)).flatMap(f => f)
+        oec.graphService.deleteExternalProps(request).map(resp => DataNode.deleteNode(request)).flatten
     }
 
 

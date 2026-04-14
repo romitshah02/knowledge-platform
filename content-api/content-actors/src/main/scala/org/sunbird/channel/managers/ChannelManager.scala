@@ -12,6 +12,7 @@ import com.mashape.unirest.http.Unirest
 import org.apache.commons.collections4.CollectionUtils
 import org.apache.commons.lang3.StringUtils
 import org.sunbird.common.JsonUtils
+import org.sunbird.telemetry.logger.TelemetryManager
 
 import scala.jdk.CollectionConverters._
 import scala.collection.mutable.ListBuffer
@@ -32,7 +33,7 @@ object ChannelManager {
   }
 
   def getAllFrameworkList(): util.List[util.Map[String, AnyRef]] = {
-    val url: String = Platform.getString("composite.search.url", "https://dev.sunbirded.org/action/composite/v3/search")
+    val url: String = Platform.getString(ChannelConstants.COMPOSITE_SEARCH_URL_CONFIG_KEY, ChannelConstants.COMPOSITE_SEARCH_URL_DEFAULT)
     val httpResponse: HttpResponse[String] = Unirest.post(url).header("Content-Type", "application/json").body("""{"request":{"filters":{"objectType":"Framework","status":"Live"},"fields":["name","code","objectType","identifier"]}}""").asString
     if (200 != httpResponse.getStatus)
       throw new ServerException("ERR_FETCHING_FRAMEWORK", "Error while fetching framework.")
@@ -96,15 +97,21 @@ object ChannelManager {
     metadata.putIfAbsent(ChannelConstants.CONTENT_ADDITIONAL_CATEGORIES, CONTENT_ADDITIONAL_CATEGORIES)
     metadata.putIfAbsent(ChannelConstants.COLLECTION_ADDITIONAL_CATEGORIES, COLLECTION_ADDITIONAL_CATEGORIES)
     metadata.putIfAbsent(ChannelConstants.ASSET_ADDITIONAL_CATEGORIES, ASSET_ADDITIONAL_CATEGORIES)
-    val primaryCategories = getChannelPrimaryCategories(metadata.get("identifier").asInstanceOf[String])
-    metadata.put("primaryCategories", primaryCategories)
-    val additionalCategories = getAdditionalCategories()
-    metadata.put("additionalCategories", additionalCategories)
+    try {
+        val primaryCategories = getChannelPrimaryCategories(metadata.get("identifier").asInstanceOf[String])
+        metadata.put("primaryCategories", primaryCategories)
+        val additionalCategories = getAdditionalCategories()
+        metadata.put("additionalCategories", additionalCategories)
+    } catch {
+        case e: Exception =>
+            // Log error and continue without populating categories
+            TelemetryManager.error("Error fetching primary/additional categories: " + e.getMessage, e)
+    }
   }
 
   def getAdditionalCategories()(implicit httpUtil: HttpUtil): java.util.List[String] = {
     val body = """{"request":{"filters":{"objectType":"ObjectCategory","visibility":["Default"]},"fields":["name","identifier"]}}"""
-    val url: String = Platform.getString("composite.search.url", "https://dev.sunbirded.org/action/composite/v3/search")
+    val url: String = Platform.getString(ChannelConstants.COMPOSITE_SEARCH_URL_CONFIG_KEY, ChannelConstants.COMPOSITE_SEARCH_URL_DEFAULT)
     val httpResponse = httpUtil.post(url, body)
     if (200 != httpResponse.status) throw new ServerException("ERR_FETCHING_OBJECT_CATEGORY", "Error while fetching object categories for additional category list.")
     val response: Response = JsonUtils.deserialize(httpResponse.body, classOf[Response])
@@ -132,7 +139,7 @@ object ChannelManager {
   }
 
   private def getPrimaryCategories(body: String)(implicit httpUtil: HttpUtil): java.util.List[java.util.Map[String, AnyRef]] =  {
-    val url: String = Platform.getString("composite.search.url", "https://dev.sunbirded.org/action/composite/v3/search")
+    val url: String = Platform.getString(ChannelConstants.COMPOSITE_SEARCH_URL_CONFIG_KEY, ChannelConstants.COMPOSITE_SEARCH_URL_DEFAULT)
     val httpResponse = httpUtil.post(url, body)
     if (200 != httpResponse.status) throw new ServerException("ERR_FETCHING_OBJECT_CATEGORY_DEFINITION", "Error while fetching primary categories.")
     val response: Response = JsonUtils.deserialize(httpResponse.body, classOf[Response])
@@ -141,7 +148,7 @@ object ChannelManager {
   }
 
   def getMasterCategoryList(): List[String] = {
-    val url: String = Platform.getString("composite.search.url", "https://dev.sunbirded.org/action/composite/v3/search")
+    val url: String = Platform.getString(ChannelConstants.COMPOSITE_SEARCH_URL_CONFIG_KEY, ChannelConstants.COMPOSITE_SEARCH_URL_DEFAULT)
     val httpResponse: HttpResponse[String] = Unirest.post(url).header("Content-Type", "application/json").body("""{"request":{"filters":{"objectType":"ObjectCategory"},"fields":["name"]}}""").asString
     if (200 != httpResponse.getStatus)
       throw new ServerException("ERR_FETCHING_OBJECT_CATEGORY", "Error while fetching object category.")

@@ -32,46 +32,71 @@ trait FrameworkValidator extends IDefinition {
       val targetFwTerms = orgAndTargetTouple._2
       val masterCategories = orgAndTargetTouple._3
 
-      validateAndSetMultiFrameworks(node, orgFwTerms, targetFwTerms, masterCategories).map(_ => {
+      validateAndSetMultiFrameworks(node, orgFwTerms, targetFwTerms, masterCategories).flatMap(_ => {
         val framework: String = node.getMetadata.getOrDefault("framework", "").asInstanceOf[String]
         if (null != fwCategories && fwCategories.nonEmpty && framework.nonEmpty) {
-          //prepare data for validation
           val fwMetadata: Map[String, AnyRef] = node.getMetadata.asScala.filter(entry => fwCategories.contains(entry._1)).toMap
-          //validate data from cache
           if (fwMetadata.nonEmpty) {
-            val errors: util.List[String] = new util.ArrayList[String]
-            for (cat: String <- fwMetadata.keys) {
-              val value: AnyRef = fwMetadata.get(cat).get
-              //TODO: Replace Cache Call With FrameworkCache Implementation
+            Future.sequence(fwMetadata.keys.map { cat =>
+              val value: AnyRef = fwMetadata(cat)
               val cacheKey = "cat_" + framework + cat
-              val list: List[String] = RedisCache.getList(cacheKey)
-              val result: Boolean = value match {
-                case value: String => list.contains(value)
-                case value: util.List[String] => list.asJava.containsAll(value)
-                case value: Array[String] => value.forall(term => list.contains(term))
-                case _ => throw new ClientException("CLIENT_ERROR", "Validation Errors.", util.Arrays.asList("Please provide correct value for [" + cat + "]"))
-              }
-
-              if (!result) {
-                if (list.isEmpty) {
-                  errors.add(cat + " range data is empty from the given framework.")
-                } else {
-                  errors.add("Metadata " + cat + " should belong from:" + list.asJava)
+              val redisEnabled = Platform.getBoolean("redis.enable", false)
+              val cachedList: List[String] = if (redisEnabled) RedisCache.getList(cacheKey) else List()
+              val termsFuture: Future[List[String]] =
+                if (cachedList.nonEmpty) Future.successful(cachedList)
+                else getCategoryTermsFromDB(graphId, framework, cat).map { terms =>
+                  if (terms.nonEmpty && redisEnabled)
+                    RedisCache.saveList(cacheKey, terms)
+                  terms
                 }
+              termsFuture.map { list =>
+                val result: Boolean = value match {
+                  case v: String            => list.contains(v)
+                  case v: util.List[String] => list.asJava.containsAll(v)
+                  case v: Array[String]     => v.forall(list.contains)
+                  case _ => throw new ClientException("CLIENT_ERROR", "Validation Errors.",
+                      util.Arrays.asList("Please provide correct value for [" + cat + "]"))
+                }
+                if (!result) {
+                  if (list.isEmpty) cat + " range data is empty from the given framework."
+                  else "Metadata " + cat + " should belong from:" + list.asJava
+                } else ""
               }
+            }.toList).flatMap { errorList =>
+              val errors = errorList.filter(_.nonEmpty)
+              if (errors.nonEmpty)
+                throw new ClientException("CLIENT_ERROR", "Validation Errors.", errors.asJava)
+              super.validate(node, operation, setDefaultValue)
             }
-            if (!errors.isEmpty)
-              throw new ClientException("CLIENT_ERROR", "Validation Errors.", errors)
-          }
-        }
-        super.validate(node, operation)
-      }).flatMap(f => f)
-    }).flatMap(f => f)
+          } else super.validate(node, operation, setDefaultValue)
+        } else super.validate(node, operation, setDefaultValue)
+      })
+    }).flatten
+  }
+
+  private def getCategoryTermsFromDB(
+      graphId: String, framework: String, category: String
+  )(implicit ec: ExecutionContext, oec: OntologyEngineContext): Future[List[String]] = {
+    val mc = MetadataCriterion.create(new util.ArrayList[Filter]() {{
+      add(new Filter(SystemProperties.IL_FUNC_OBJECT_TYPE.name(), SearchConditions.OP_EQUAL, "Term"))
+      add(new Filter(SystemProperties.IL_SYS_NODE_TYPE.name(), SearchConditions.OP_EQUAL, "DATA_NODE"))
+      add(new Filter("category", SearchConditions.OP_EQUAL, category))
+      add(new Filter("status", SearchConditions.OP_NOT_EQUAL, "Retired"))
+    }})
+    val criteria = new SearchCriteria {{ addMetadata(mc); setCountQuery(false) }}
+    oec.graphService.getNodeByUniqueIds(graphId, criteria).map { nodes =>
+      nodes.asScala.filter { n =>
+        val id = n.getIdentifier
+        id != null && id.toLowerCase.startsWith(framework.toLowerCase + "_")
+      }.flatMap { n =>
+        Option(n.getMetadata.get("name")).map(_.asInstanceOf[String])
+      }.toList
+    }
   }
 
   private def validateAndSetMultiFrameworks(node: Node, orgFwTerms: List[String], targetFwTerms: List[String], masterCategories: List[Map[String, AnyRef]])(implicit ec: ExecutionContext, oec: OntologyEngineContext): Future[Map[String, AnyRef]] = {
     getValidatedTerms(node, orgFwTerms).map(orgTermMap => {
-     val jsonPropsType = schemaValidator.getAllPropsType.asScala 
+     val jsonPropsType = schemaValidator.getAllPropsType.asScala
      masterCategories.map(masterCategory => {
       val orgIdFieldName = masterCategory.getOrElse("orgIdFieldName", "").asInstanceOf[String]
       val code = masterCategory.getOrElse("code", "").asInstanceOf[String]
@@ -88,7 +113,7 @@ trait FrameworkValidator extends IDefinition {
       }
      })
      getValidatedTerms(node, targetFwTerms)
-    }).flatMap(f => f)
+    }).flatten
   }
 
 
@@ -183,7 +208,8 @@ trait FrameworkValidator extends IDefinition {
           setCountQuery(false)
         }
       }
-      oec.graphService.getNodeByUniqueIds(node.getGraphId, searchCriteria).map(nodeList => {
+      val graphId = if (StringUtils.isNotBlank(node.getGraphId)) node.getGraphId else "domain"
+      oec.graphService.getNodeByUniqueIds(graphId, searchCriteria).map(nodeList => {
         if (CollectionUtils.isEmpty(nodeList))
           throw new ResourceNotFoundException("ERR_VALIDATING_CONTENT_FRAMEWORK", s"Nodes not found for Id's $ids ")
         val termMap = nodeList.asScala.map(node => node.getIdentifier -> node.getMetadata.getOrDefault("name", "")).toMap

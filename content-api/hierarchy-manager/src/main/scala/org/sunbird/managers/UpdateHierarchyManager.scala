@@ -1,4 +1,4 @@
-package org.sunbird.managers
+package org.sunbird.managers.content
 
 import java.util.concurrent.CompletionException
 import org.apache.commons.collections4.{CollectionUtils, MapUtils}
@@ -16,7 +16,7 @@ import org.sunbird.schema.dto.ValidationResult
 import org.sunbird.schema.{ISchemaValidator, SchemaValidatorFactory}
 import scala.jdk.CollectionConverters._
 import org.sunbird.telemetry.logger.TelemetryManager
-import org.sunbird.utils.{HierarchyBackwardCompatibilityUtil, HierarchyConstants, HierarchyErrorCodes}
+import org.sunbird.utils.content.{HierarchyBackwardCompatibilityUtil, HierarchyConstants, HierarchyErrorCodes}
 
 import scala.collection.convert.ImplicitConversions._
 import scala.collection.mutable
@@ -28,48 +28,47 @@ object UpdateHierarchyManager {
     def updateHierarchy(request: Request)(implicit oec: OntologyEngineContext, ec: ExecutionContext): Future[Response] = {
         validateRequest(request)
         val nodesModified: java.util.HashMap[String, AnyRef] = request.getRequest.get(HierarchyConstants.NODES_MODIFIED).asInstanceOf[java.util.HashMap[String, AnyRef]]
-        TelemetryManager.info("UpdateHierarchyManager:: updateHierarchy:: nodesModified: " + nodesModified)
         val hierarchy: java.util.HashMap[String, AnyRef] = request.getRequest.get(HierarchyConstants.HIERARCHY).asInstanceOf[java.util.HashMap[String, AnyRef]]
-        TelemetryManager.info("UpdateHierarchyManager:: updateHierarchy:: hierarchy: " + hierarchy)
         val rootId: String = getRootId(nodesModified, hierarchy)
-        TelemetryManager.info("UpdateHierarchyManager:: updateHierarchy:: rootId: " + rootId)
         request.getContext.put(HierarchyConstants.ROOT_ID, rootId)
         getValidatedRootNode(rootId, request).map(node => {
             getExistingHierarchy(request, node).map(existingHierarchy => {
                 val existingChildren = existingHierarchy.getOrElse(HierarchyConstants.CHILDREN, new java.util.ArrayList[java.util.HashMap[String, AnyRef]]()).asInstanceOf[java.util.List[java.util.Map[String, AnyRef]]]
                 val nodes = List(node)
                 addChildNodesInNodeList(existingChildren, request, nodes).map(list => (existingHierarchy, list))
-            }).flatMap(f => f)
+            }).flatten
               .map(result => {
                   val nodes = result._2
-                  TelemetryManager.info("NodeList final size: " + nodes.size)
+
                   val duplicates = nodes.groupBy(node => node.getIdentifier).map(t => t._1 -> t._2.size).toMap
                   //TelemetryManager.info("NodeList for root with duplicates :" + rootId +" :: " + ScalaJsonUtils.serialize(duplicates))
                   val nodeMap: Map[String, AnyRef] = nodes.map(node => node.getIdentifier -> node.getMetadata.get("visibility")).toMap
                   //TelemetryManager.info("NodeList for root id :" + rootId +" :: " + ScalaJsonUtils.serialize(nodeMap))
-                  val idMap: mutable.Map[String, String] = mutable.Map()
+                  val idMap: mutable.Map[String, String] = mutable.Map[String, String]()
                   idMap += (rootId -> rootId)
-                  updateNodesModifiedInNodeList(nodes, nodesModified, request, idMap).map(modifiedNodeList => {
-                      getChildrenHierarchy(modifiedNodeList, rootId, hierarchy, idMap, result._1, request).map(children => {
-                          TelemetryManager.log("Children for root id :" + rootId +" :: " + JsonUtils.serialize(children))
-                          updateHierarchyData(rootId, children, modifiedNodeList, request).map(node => {
-                              val response = ResponseHandler.OK()
-                              response.put(HierarchyConstants.CONTENT_ID, rootId)
-                              idMap.remove(rootId)
-                              response.put(HierarchyConstants.IDENTIFIERS, idMap.asJava)
-                              if (request.getContext.getOrDefault("shouldImageDelete", false.asInstanceOf[AnyRef]).asInstanceOf[Boolean])
-                                  deleteHierarchy(request)
-                              Future(response)
-                          }).flatMap(f => f)
-                      }).flatMap(f => f).recoverWith {
+                      updateNodesModifiedInNodeList(nodes, nodesModified, request, idMap).map(modifiedNodeList => {
+
+                          getChildrenHierarchy(modifiedNodeList, rootId, hierarchy, idMap, result._1, request).map(children => {
+                              TelemetryManager.log("Children for root id :" + rootId +" :: " + JsonUtils.serialize(children))
+
+                              updateHierarchyData(rootId, children, modifiedNodeList, request).map(node => {
+                                  val response = ResponseHandler.OK()
+                                  response.put(HierarchyConstants.CONTENT_ID, rootId)
+                                  idMap.remove(rootId)
+                                  response.put(HierarchyConstants.IDENTIFIERS, idMap.asJava)
+                                  if (request.getContext.getOrDefault("shouldImageDelete", false.asInstanceOf[AnyRef]).asInstanceOf[Boolean])
+                                      deleteHierarchy(request)
+                                  Future(response)
+                              }).flatten
+                          }).flatten.recoverWith {
                           case clientException: ClientException => if(clientException.getMessage.equalsIgnoreCase("Validation Errors")) {
                               Future(ResponseHandler.ERROR(ResponseCode.CLIENT_ERROR, ResponseCode.CLIENT_ERROR.name(), clientException.getMessages.mkString(",")))
                           } else throw clientException
                           case e: Exception =>  throw e
                       }
-                  }).flatMap(f => f)
+                  }).flatten
               })
-        }).flatMap(f => f).flatMap(f => f) recoverWith { case e: CompletionException => throw e.getCause }
+        }).flatten.flatten recoverWith { case e: CompletionException => throw e.getCause }
     }
 
     private def validateRequest(request: Request)(implicit ec: ExecutionContext): Unit = {
@@ -132,6 +131,7 @@ object UpdateHierarchyManager {
     private def fetchHierarchy(request: Request, rootNode: Node)(implicit ec: ExecutionContext, oec: OntologyEngineContext): Future[Any] = {
         val req = new Request(request)
         req.put(HierarchyConstants.IDENTIFIER, rootNode.getIdentifier)
+
         oec.graphService.readExternalProps(req, List(HierarchyConstants.HIERARCHY)).map(response => {
             if (ResponseHandler.checkError(response) && ResponseHandler.isResponseNotFoundError(response)) {
                 if (CollectionUtils.containsAny(HierarchyConstants.HIERARCHY_LIVE_STATUS, rootNode.getMetadata.get("status").asInstanceOf[String]))
@@ -149,7 +149,7 @@ object UpdateHierarchyManager {
                     }) recover { case e: ResourceNotFoundException => TelemetryManager.log("No hierarchy is present in cassandra for identifier:" + rootNode.getIdentifier) }
                 }
             } else Future(response.getResult.toMap.getOrElse(HierarchyConstants.HIERARCHY, "").asInstanceOf[String])
-        }).flatMap(f => f)
+        }).flatten
     }
 
     private def addChildNodesInNodeList(childrenMaps: java.util.List[java.util.Map[String, AnyRef]], request: Request, nodes: scala.collection.immutable.List[Node])(implicit oec: OntologyEngineContext, ec: ExecutionContext): Future[scala.collection.immutable.List[Node]] = {
@@ -160,7 +160,7 @@ object UpdateHierarchyManager {
                         addChildNodesInNodeList(child.get(HierarchyConstants.CHILDREN).asInstanceOf[java.util.List[java.util.Map[String, AnyRef]]], request, modifiedList)
                     } else
                         Future(modifiedList)
-                }).flatMap(f => f)
+                }).flatten
             }).toList
             Future.sequence(futures).map(f => f.flatten.distinct)
         } else {
@@ -286,6 +286,7 @@ object UpdateHierarchyManager {
                 val currentLevelNodes: Map[String, List[java.util.Map[String, Object]]] = list.filter(node => node.get(HierarchyConstants.DEPTH).asInstanceOf[Number].intValue() == depth).groupBy(_.get("identifier").asInstanceOf[String].replaceAll(".img", ""))
                 val nextLevel: List[java.util.Map[String, AnyRef]] = list.filter(node => node.get(HierarchyConstants.DEPTH).asInstanceOf[Number].intValue() == (depth + 1))
                 if (CollectionUtils.isNotEmpty(nextLevel) && MapUtils.isNotEmpty(currentLevelNodes)) {
+
                     nextLevel.foreach(e => {
                         val parentId = e.get("parent").asInstanceOf[String]
                         currentLevelNodes.get(parentId) match {
@@ -296,7 +297,7 @@ object UpdateHierarchyManager {
                                 children.add(e)
                                 parent.put(HierarchyConstants.CHILDREN, sortByIndex(children))
                             })
-                            case None => // Parent not found, skip this node
+                            case None => ()
                         }
                     })
                 }
@@ -310,14 +311,13 @@ object UpdateHierarchyManager {
         val childrenIdentifiersMap: Map[String, Map[String, Int]] = getChildrenIdentifiersMap(hierarchyData, idMap, existingHierarchy)
 //        TelemetryManager.log("Children Id map for root id :" + rootId + " :: " + ScalaJsonUtils.serialize(childrenIdentifiersMap))
         getPreparedHierarchyData(nodeList, rootId, childrenIdentifiersMap, request).map(nodeMaps => {
-            TelemetryManager.info("prepared hierarchy list without filtering: " + nodeMaps.size())
             val filteredNodeMaps = nodeMaps.filter(nodeMap => null != nodeMap.get(HierarchyConstants.DEPTH)).toList
-            TelemetryManager.info("prepared hierarchy list with filtering: " + filteredNodeMaps.size())
-//            TelemetryManager.log("filteredNodeMaps for root id :" + rootId + " :: " + ScalaJsonUtils.serialize(filteredNodeMaps))
+
             val hierarchyMap = constructHierarchy(filteredNodeMaps)
             if (MapUtils.isNotEmpty(hierarchyMap)) {
-                hierarchyMap.getOrDefault(HierarchyConstants.CHILDREN, new java.util.ArrayList[java.util.Map[String, AnyRef]]()).asInstanceOf[java.util.List[java.util.Map[String, AnyRef]]]
-                        .filter(child => MapUtils.isNotEmpty(child))
+                val chil = hierarchyMap.getOrDefault(HierarchyConstants.CHILDREN, new java.util.ArrayList[java.util.Map[String, AnyRef]]()).asInstanceOf[java.util.List[java.util.Map[String, AnyRef]]]
+
+                chil.filter(child => MapUtils.isNotEmpty(child))
             }
             else
                 new java.util.ArrayList[java.util.Map[String, AnyRef]]()
@@ -355,9 +355,7 @@ object UpdateHierarchyManager {
             val updatedNodeList = getTempNode(nodeList, rootId) :: List()
             updateHierarchyRelatedData(childrenIdentifiersMap.getOrElse(rootId, Map[String, Int]()), 1,
                 rootId, nodeList, childrenIdentifiersMap, updatedNodeList, request, rootId).map(finalEnrichedNodeList => {
-                TelemetryManager.info("Final enriched list size: " + finalEnrichedNodeList.size)
                 val childNodeIds = finalEnrichedNodeList.map(node => node.getIdentifier.replaceAll(".img", "")).filterNot(id => StringUtils.containsIgnoreCase(rootId, id)).distinct
-                TelemetryManager.info("Final enriched ids (childNodes): " + childNodeIds + " :: size: " + childNodeIds.size)
                 // UNDERSTANDING: below we used nodeList to update DEPTH and CHILD_NODES. It automatically updated to finalEnrichedNodeList.
                 // Because, the Node object is a Java POJO with metadata using java.util.Map.
                 updateNodeList(nodeList, rootId, new java.util.HashMap[String, AnyRef]() {
@@ -365,7 +363,7 @@ object UpdateHierarchyManager {
                     put(HierarchyConstants.CHILD_NODES, new java.util.ArrayList[String](childNodeIds))
                 })
                 validateNodes(finalEnrichedNodeList, rootId).map(result => HierarchyManager.convertNodeToMap(finalEnrichedNodeList))
-            }).flatMap(f => f)
+            }).flatten
         } else {
             updateNodeList(nodeList, rootId, new java.util.HashMap[String, AnyRef]() {
                 {
@@ -402,7 +400,7 @@ object UpdateHierarchyManager {
                     } else
                         nodeList.find(p => p.getIdentifier.equals(parent)).orNull
                     val nxtEnrichedNodeList = if (null != parentNode) {
-                        TelemetryManager.info(s"ObjectType for $parent is ${parentNode.getObjectType}...")
+
                         val parentMetadata: java.util.Map[String, AnyRef] = NodeUtil.serialize(parentNode, new java.util.ArrayList[String](), parentNode.getObjectType.toLowerCase, "1.0")
                         val childMetadata: java.util.Map[String, AnyRef] = NodeUtil.serialize(node, new java.util.ArrayList[String](), node.getObjectType.toLowerCase, "1.0")
                         HierarchyManager.validateLeafNodes(parentMetadata, childMetadata, request)
@@ -413,14 +411,14 @@ object UpdateHierarchyManager {
                         HierarchyBackwardCompatibilityUtil.setNewObjectType(node)
                         node :: enrichedNodeList
                     } else {
-                        TelemetryManager.info("There is no parent node for identifier:" + parent)
+
                         enrichedNodeList
                     }
                     if (MapUtils.isNotEmpty(hierarchyStructure.getOrDefault(id, Map[String, Int]()))) {
                         updateHierarchyRelatedData(hierarchyStructure.getOrDefault(id, Map[String, Int]()), node.getMetadata.get(HierarchyConstants.DEPTH).asInstanceOf[Int] + 1, id, nodeList, hierarchyStructure, nxtEnrichedNodeList, request, rootId)
                     } else
                         Future(nxtEnrichedNodeList)
-                }).flatMap(f => f) recoverWith { case e: CompletionException => throw e.getCause }
+                }).flatten recoverWith { case e: CompletionException => throw e.getCause }
             }
         })
         if (CollectionUtils.isNotEmpty(futures)) {
@@ -467,6 +465,7 @@ object UpdateHierarchyManager {
         val req = new Request(request)
         req.getContext.put(HierarchyConstants.IDENTIFIER, rootId)
         val metadata = cleanUpRootData(node)
+
         req.getRequest.putAll(metadata)
         req.put(HierarchyConstants.HIERARCHY, ScalaJsonUtils.serialize(updatedHierarchy))
         req.put(HierarchyConstants.RELATIONAL_METADATA_COL, ScalaJsonUtils.serialize(reqHierarchy))
@@ -499,6 +498,7 @@ object UpdateHierarchyManager {
     private def updateNodeList(nodeList: List[Node], id: String, metadata: java.util.HashMap[String, AnyRef]): Unit = {
         nodeList.foreach(node => {
             if(node.getIdentifier.startsWith(id)){
+
                 node.getMetadata.putAll(metadata)
             }
         })

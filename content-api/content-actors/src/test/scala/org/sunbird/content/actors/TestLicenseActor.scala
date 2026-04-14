@@ -4,7 +4,7 @@ import scala.jdk.CollectionConverters._
 import java.util
 
 import org.apache.pekko.actor.Props
-import org.apache.hadoop.util.StringUtils
+import org.apache.commons.lang3.StringUtils
 import org.scalamock.scalatest.MockFactory
 import org.sunbird.cloudstore.StorageService
 import org.sunbird.common.dto.Request
@@ -23,7 +23,7 @@ class TestLicenseActor extends BaseSpec with MockFactory {
     testUnknownOperation(Props(new LicenseActor()), getLicenseRequest())
   }
 
-  it should "create a licenseNode and store it in neo4j" in {
+  it should "create a licenseNode and store it in the graph" in {
     implicit val ss = mock[StorageService]
     implicit val oec: OntologyEngineContext = mock[OntologyEngineContext]
     val graphDB = mock[GraphService]

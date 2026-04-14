@@ -46,7 +46,7 @@ trait VersioningNode extends IDefinition {
                 getEditableNode(identifier, node)
             else
                 Future{node}
-        }).flatMap(f => f)
+        }).flatten
     }
 
     private def getNodeToRead(identifier: String, mode: String, disableCache: Option[Boolean])(implicit oec: OntologyEngineContext, ec: ExecutionContext): Future[Node] = {
@@ -131,17 +131,21 @@ trait VersioningNode extends IDefinition {
     }
 
     def getCachedNode(identifier: String, ttl: Integer)(implicit oec: OntologyEngineContext, ec: ExecutionContext): Future[Node] = {
-        val nodeStringFuture: Future[String] = RedisCache.getAsync(identifier, nodeCacheAsyncHandler, ttl)
-        nodeStringFuture.map(nodeString => {
-            if (null != nodeString && !nodeString.asInstanceOf[String].isEmpty) {
-                val nodeMap: util.Map[String, AnyRef] = JsonUtils.deserialize(nodeString.asInstanceOf[String], classOf[java.util.Map[String, AnyRef]])
-                val node: Node = NodeUtil.deserialize(nodeMap, getSchemaName(), schemaValidator.getConfig
-                  .getAnyRef("relations").asInstanceOf[java.util.Map[String, AnyRef]])
-                Future {node}
-            } else {
-                super.getNode(identifier, "read", null)
-            }
-        }).flatMap(f => f)
+        if (!Platform.getBoolean("redis.enable", false)) {
+            super.getNode(identifier, "read", null)
+        } else {
+            val nodeStringFuture: Future[String] = RedisCache.getAsync(identifier, nodeCacheAsyncHandler, ttl)
+            nodeStringFuture.map(nodeString => {
+                if (null != nodeString && !nodeString.asInstanceOf[String].isEmpty) {
+                    val nodeMap: util.Map[String, AnyRef] = JsonUtils.deserialize(nodeString.asInstanceOf[String], classOf[java.util.Map[String, AnyRef]])
+                    val node: Node = NodeUtil.deserialize(nodeMap, getSchemaName(), schemaValidator.getConfig
+                      .getAnyRef("relations").asInstanceOf[java.util.Map[String, AnyRef]])
+                    Future {node}
+                } else {
+                    super.getNode(identifier, "read", null)
+                }
+            }).flatten
+        }
     }
 
     private def nodeCacheAsyncHandler(objKey: String)(implicit oec: OntologyEngineContext, ec: ExecutionContext): Future[String] = {
@@ -151,7 +155,7 @@ trait VersioningNode extends IDefinition {
                 val nodeMap = NodeUtil.serialize(node, null, node.getObjectType.toLowerCase().replace("image", ""), getSchemaVersion())
                 Future(ScalaJsonUtils.serialize(nodeMap))
             } else Future("")
-        }).flatMap(f => f)
+        }).flatten
     }
     
     private def getSchemaNameFromMimeType(node: Node) : String = {

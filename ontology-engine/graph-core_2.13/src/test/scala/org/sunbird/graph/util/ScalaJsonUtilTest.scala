@@ -4,7 +4,7 @@ import java.util
 
 import com.fasterxml.jackson.databind.exc.{InvalidDefinitionException, MismatchedInputException}
 import org.apache.commons.lang3.StringUtils
-import org.codehaus.jackson.JsonProcessingException
+import com.fasterxml.jackson.core.JsonProcessingException
 import org.scalatest.{FlatSpec, Matchers}
 
 class ScalaJsonUtilTest extends FlatSpec with Matchers {

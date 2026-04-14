@@ -14,7 +14,7 @@ import org.sunbird.graph.external.ExternalPropsManager
 import org.sunbird.graph.nodes.DataNode
 import org.sunbird.graph.utils.NodeUtil
 import org.sunbird.telemetry.logger.TelemetryManager
-import org.sunbird.utils.HierarchyConstants
+import org.sunbird.utils.content.HierarchyConstants
 import scala.jdk.CollectionConverters._
 import scala.concurrent.{ExecutionContext, Future}
 
@@ -57,7 +57,7 @@ object FlagManager {
         response.put("versionKey", flaggedNode.getMetadata.get("versionKey"))
         response
       })
-    }).flatMap(f => f) recoverWith { case e: CompletionException => throw e.getCause }
+    }).flatten recoverWith { case e: CompletionException => throw e.getCause }
   }
 
   def updateCollection(request: Request)(implicit oec: OntologyEngineContext, ec: ExecutionContext): Future[Node] = {
@@ -75,7 +75,7 @@ object FlagManager {
       }
       val updateNode = DataNode.update(request)
       updateNode
-    }).flatMap(f => f) recoverWith { case e: CompletionException => throw e.getCause }
+    }).flatten recoverWith { case e: CompletionException => throw e.getCause }
   }
 
   private def fetchHierarchy(request: Request)(implicit ec: ExecutionContext, oec: OntologyEngineContext): Future[Any] = {

@@ -4,3 +4,5 @@
 **/*.iml
 **/application.conf
 *.conf
+docker/.migrations
+docker/.es-migrations
