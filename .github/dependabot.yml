@@ -53,10 +53,6 @@ updates:
       # Play Framework.
       - dependency-name: "io.netty:*"
 
-  # Note: taxonomy-service-sbt/ uses SBT which Dependabot does not support
-  # natively. Dependency alerts for that module come from the GitHub Dependency
-  # Graph submission in dependency-submission.yml (SBOM path).
-
   # GitHub Actions — keeps CI workflow action versions current
   - package-ecosystem: "github-actions"
     directory: "/"
