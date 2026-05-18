@@ -98,6 +98,14 @@ public class DriverUtil {
 			}
 		}
 
+		// Add CQL authentication if configured
+		if (Platform.config.hasPath("graph.storage.username")) {
+			props.put("storage.username", Platform.config.getString("graph.storage.username"));
+		}
+		if (Platform.config.hasPath("graph.storage.password")) {
+			props.put("storage.password", Platform.config.getString("graph.storage.password"));
+		}
+
 		if (!props.containsKey("storage.cql.local-datacenter")) {
 			props.put("storage.cql.local-datacenter", "datacenter1");
 		}

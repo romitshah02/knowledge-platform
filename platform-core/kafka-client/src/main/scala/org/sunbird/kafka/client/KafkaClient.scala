@@ -64,25 +64,53 @@ class KafkaClient {
 		}))
 	}
 
-	private def createProducer(): KafkaProducer[Long, String] = {
-		new KafkaProducer[Long, String](new Properties() {
-			{
-				put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, BOOTSTRAP_SERVERS)
-				put(ProducerConfig.CLIENT_ID_CONFIG, "KafkaClientProducer")
-				put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, classOf[LongSerializer].getName)
-				put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, classOf[StringSerializer].getName)
+	private def applySaslConfig(props: Properties): Unit = {
+		val saslEnabled = Platform.getBoolean("kafka.sasl.enabled", false)
+		if (saslEnabled) {
+			val mechanism = Platform.getString("kafka.sasl.mechanism", "PLAIN")
+			val protocol = Platform.getString("kafka.security.protocol", "SASL_PLAINTEXT")
+			props.put("security.protocol", protocol)
+			props.put("sasl.mechanism", mechanism)
+
+			// Option 1: Full JAAS config string (for advanced use cases like SCRAM/GSSAPI)
+			val jaasConfig = Platform.getString("kafka.sasl.jaas.config", "")
+			if (jaasConfig.nonEmpty) {
+				props.put("sasl.jaas.config", jaasConfig)
+			} else {
+				// Option 2: Build JAAS from simple username/password (no escaping needed in ConfigMap)
+				val username = Platform.getString("kafka.sasl.username", "")
+				val password = Platform.getString("kafka.sasl.password", "")
+				if (username.nonEmpty && password.nonEmpty) {
+					val loginModule = mechanism match {
+						case "SCRAM-SHA-256" | "SCRAM-SHA-512" =>
+							"org.apache.kafka.common.security.scram.ScramLoginModule"
+						case _ =>
+							"org.apache.kafka.common.security.plain.PlainLoginModule"
+					}
+					props.put("sasl.jaas.config",
+						s"""$loginModule required username="$username" password="$password";""")
+				}
 			}
-		})
+		}
+	}
+
+	private def createProducer(): KafkaProducer[Long, String] = {
+		val props = new Properties()
+		props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, BOOTSTRAP_SERVERS)
+		props.put(ProducerConfig.CLIENT_ID_CONFIG, "KafkaClientProducer")
+		props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, classOf[LongSerializer].getName)
+		props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, classOf[StringSerializer].getName)
+		applySaslConfig(props)
+		new KafkaProducer[Long, String](props)
 	}
 
 	private def createConsumer(): KafkaConsumer[Long, String] = {
-		new KafkaConsumer[Long, String](new Properties() {
-			{
-				put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, BOOTSTRAP_SERVERS)
-				put(ConsumerConfig.CLIENT_ID_CONFIG, "KafkaClientConsumer")
-				put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, classOf[LongDeserializer].getName)
-				put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, classOf[StringDeserializer].getName)
-			}
-		})
+		val props = new Properties()
+		props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, BOOTSTRAP_SERVERS)
+		props.put(ConsumerConfig.CLIENT_ID_CONFIG, "KafkaClientConsumer")
+		props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, classOf[LongDeserializer].getName)
+		props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, classOf[StringDeserializer].getName)
+		applySaslConfig(props)
+		new KafkaConsumer[Long, String](props)
 	}
 }

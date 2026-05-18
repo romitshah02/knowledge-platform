@@ -94,6 +94,7 @@ class ImportManager(config: ImportConfig) {
 
 	def getMetadata(source: String, key: String)(implicit oec: OntologyEngineContext, ec: ExecutionContext): util.Map[String, AnyRef] = {
 		if (StringUtils.isNotBlank(source)) {
+			org.sunbird.common.SafeUrlValidator.validate(source)
 			val response: Response = oec.httpUtil.get(source, "", new util.HashMap[String, String]())
 			if (null != response && response.getResponseCode.code() == 200)
 				response.getResult.getOrDefault(key, new util.HashMap[String, AnyRef]()).asInstanceOf[util.Map[String, AnyRef]]
