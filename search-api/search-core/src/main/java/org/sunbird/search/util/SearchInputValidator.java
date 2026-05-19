@@ -122,9 +122,9 @@ public class SearchInputValidator {
         if (softConstraints == null || softConstraints.isEmpty()) return;
         for (Map.Entry<String, Object> entry : softConstraints.entrySet()) {
             String key = entry.getKey();
-            if (key.contains(".") || key.contains("[") || key.contains("{"))
+            if (!ALLOWED_EXISTS_FIELDS.contains(key))
                 throw new ClientException("ERR_INVALID_SOFT_CONSTRAINTS",
-                        "Invalid soft constraint field: " + key);
+                        "Soft constraint field not allowed: " + key);
         }
     }
 }

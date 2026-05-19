@@ -228,8 +228,13 @@ object CopyManager {
     protected def isInternalUrl(url: String)(implicit ss: StorageService): Boolean = {
         try {
             val parsedUrl = new URL(url)
+            val host = parsedUrl.getHost.toLowerCase
             val containerName = ss.getContainerName
-            parsedUrl.getHost.contains(containerName) || parsedUrl.getPath.contains(containerName)
+            val knownDomains = List(".blob.core.windows.net", ".s3.amazonaws.com", ".storage.googleapis.com")
+            val isKnownCloudHost = knownDomains.exists(domain => host.endsWith(domain))
+            val hostMatch = isKnownCloudHost && host.startsWith(containerName + ".")
+            val pathMatch = parsedUrl.getPath.startsWith("/" + containerName + "/")
+            hostMatch || pathMatch
         } catch {
             case _: Exception => false
         }

@@ -76,42 +76,70 @@ public class SafeUrlValidator {
     private static void validateIpAddress(URL url) {
         String host = url.getHost();
         try {
-            InetAddress address = InetAddress.getByName(host);
-            byte[] addr = address.getAddress();
+            InetAddress[] addresses = InetAddress.getAllByName(host);
+            for (InetAddress address : addresses) {
+                byte[] addr = address.getAddress();
 
-            if (address.isLoopbackAddress()) {
-                throw new ClientException("ERR_BLOCKED_URL_IP",
-                        "URL resolves to loopback address");
+                if (address.isLoopbackAddress()) {
+                    throw new ClientException("ERR_BLOCKED_URL_IP",
+                            "URL resolves to loopback address");
+                }
+
+                if (address.isSiteLocalAddress()) {
+                    throw new ClientException("ERR_BLOCKED_URL_IP",
+                            "URL resolves to private network address");
+                }
+
+                if (address.isLinkLocalAddress()) {
+                    throw new ClientException("ERR_BLOCKED_URL_IP",
+                            "URL resolves to link-local address");
+                }
+
+                if (address.isAnyLocalAddress()) {
+                    throw new ClientException("ERR_BLOCKED_URL_IP",
+                            "URL resolves to wildcard address");
+                }
+
+                // Block IPv6 ULA (fc00::/7)
+                if (addr.length == 16 && (addr[0] & 0xFE) == 0xFC) {
+                    throw new ClientException("ERR_BLOCKED_URL_IP",
+                            "URL resolves to IPv6 unique local address");
+                }
+
+                // Block IPv4-mapped IPv6 (::ffff:x.x.x.x) pointing to private ranges
+                if (addr.length == 16 && isIPv4MappedPrivate(addr)) {
+                    throw new ClientException("ERR_BLOCKED_URL_IP",
+                            "URL resolves to private network address");
+                }
+
+                // Block cloud metadata IP explicitly (169.254.169.254)
+                if (addr.length == 4
+                        && (addr[0] & 0xFF) == 169
+                        && (addr[1] & 0xFF) == 254
+                        && (addr[2] & 0xFF) == 169
+                        && (addr[3] & 0xFF) == 254) {
+                    throw new ClientException("ERR_BLOCKED_URL_IP",
+                            "URL resolves to cloud metadata endpoint");
+                }
             }
-
-            if (address.isSiteLocalAddress()) {
-                throw new ClientException("ERR_BLOCKED_URL_IP",
-                        "URL resolves to private network address");
-            }
-
-            if (address.isLinkLocalAddress()) {
-                throw new ClientException("ERR_BLOCKED_URL_IP",
-                        "URL resolves to link-local address");
-            }
-
-            if (address.isAnyLocalAddress()) {
-                throw new ClientException("ERR_BLOCKED_URL_IP",
-                        "URL resolves to wildcard address");
-            }
-
-            // Block cloud metadata IP explicitly (169.254.169.254)
-            if (addr.length == 4
-                    && (addr[0] & 0xFF) == 169
-                    && (addr[1] & 0xFF) == 254
-                    && (addr[2] & 0xFF) == 169
-                    && (addr[3] & 0xFF) == 254) {
-                throw new ClientException("ERR_BLOCKED_URL_IP",
-                        "URL resolves to cloud metadata endpoint");
-            }
-
         } catch (UnknownHostException e) {
             throw new ClientException("ERR_INVALID_URL",
                     "Cannot resolve host: " + host);
         }
+    }
+
+    private static boolean isIPv4MappedPrivate(byte[] addr) {
+        // Check ::ffff: prefix (bytes 0-9 = 0, bytes 10-11 = 0xFF)
+        for (int i = 0; i < 10; i++) {
+            if (addr[i] != 0) return false;
+        }
+        if ((addr[10] & 0xFF) != 0xFF || (addr[11] & 0xFF) != 0xFF) return false;
+        int b0 = addr[12] & 0xFF;
+        int b1 = addr[13] & 0xFF;
+        // 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8, 169.254.0.0/16
+        return b0 == 10 || b0 == 127
+                || (b0 == 172 && (b1 & 0xF0) == 16)
+                || (b0 == 192 && b1 == 168)
+                || (b0 == 169 && b1 == 254);
     }
 }

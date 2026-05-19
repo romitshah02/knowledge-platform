@@ -96,6 +96,7 @@ public class HtmlSanitizer {
     }
 
     private static List<Object> ensureMutableList(List<Object> list) {
+        if (list.isEmpty()) return list;
         try {
             list.set(0, list.get(0)); // Test if mutable
             return list;
@@ -118,7 +119,9 @@ public class HtmlSanitizer {
             } else if (value instanceof Map) {
                 sanitizeMap((Map<String, Object>) value, depth + 1);
             } else if (value instanceof List) {
-                sanitizeList(key, (List<Object>) value, depth + 1);
+                List<Object> mutableList = ensureMutableList((List<Object>) value);
+                data.put(key, mutableList);
+                sanitizeList(key, mutableList, depth + 1);
             }
         }
     }
@@ -128,15 +131,12 @@ public class HtmlSanitizer {
         for (int i = 0; i < list.size(); i++) {
             Object item = list.get(i);
             if (item instanceof String) {
-                try {
-                    list.set(i, sanitizeField(parentKey, (String) item, depth + 1));
-                } catch (UnsupportedOperationException e) {
-                    // List is immutable, skip sanitization for this item
-                }
+                list.set(i, sanitizeField(parentKey, (String) item, depth + 1));
             } else if (item instanceof Map) {
                 sanitizeMap((Map<String, Object>) item, depth + 1);
             } else if (item instanceof List) {
                 List<Object> mutableSubList = ensureMutableList((List<Object>) item);
+                list.set(i, mutableSubList);
                 sanitizeList(parentKey, mutableSubList, depth + 1);
             }
         }
