@@ -61,6 +61,7 @@ trait LocalizeAssetProcessor extends IProcessor {
 	}
 
 	def downloadFile(downloadPath: String, fileUrl: String): File = try {
+		org.sunbird.common.SafeUrlValidator.validate(fileUrl)
 		createDirectory(downloadPath)
 		val file = new File(downloadPath + File.separator + getFileNameFromURL(fileUrl))
 		FileUtils.copyURLToFile(new URL(fileUrl), file)

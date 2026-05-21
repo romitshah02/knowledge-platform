@@ -29,6 +29,7 @@ import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.search.sort.NestedSortBuilder;
 import org.opensearch.search.sort.SortBuilders;
 import org.opensearch.search.sort.SortOrder;
+import org.sunbird.search.util.SearchInputValidator;
 import org.sunbird.common.Platform;
 import org.sunbird.search.client.ElasticSearchUtil;
 import org.sunbird.search.dto.SearchDTO;
@@ -726,7 +727,7 @@ public class SearchProcessor {
 	private QueryBuilder getMatchPhraseQuery(String propertyName, List<Object> values, boolean match) {
 		BoolQueryBuilder queryBuilder = QueryBuilders.boolQuery();
 		for (Object value : values) {
-			String stringValue = String.valueOf(value);
+			String stringValue = SearchInputValidator.escapeRegexValue(String.valueOf(value));
 			if (match) {
 				queryBuilder.should(QueryBuilders
 						.regexpQuery(propertyName,
@@ -748,7 +749,7 @@ public class SearchProcessor {
 	private QueryBuilder getRegexQuery(String propertyName, List<Object> values) {
 		BoolQueryBuilder queryBuilder = QueryBuilders.boolQuery();
 		for (Object value : values) {
-			String stringValue = String.valueOf(value);
+			String stringValue = SearchInputValidator.escapeRegexValue(String.valueOf(value));
 			queryBuilder.should(QueryBuilders.regexpQuery(propertyName,
 					".*" + stringValue.toLowerCase()));
 		}

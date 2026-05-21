@@ -9,7 +9,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.http.HttpHost;
+import org.apache.http.auth.AuthScope;
+import org.apache.http.auth.UsernamePasswordCredentials;
+import org.apache.http.client.CredentialsProvider;
 import org.apache.http.client.config.RequestConfig;
+import org.apache.http.impl.client.BasicCredentialsProvider;
 import org.apache.http.util.EntityUtils;
 import org.opensearch.action.support.master.AcknowledgedResponse;
 import org.opensearch.client.*;
@@ -98,17 +102,35 @@ public class ElasticSearchUtil {
 			for (String info : connectionInfo.split(",")) {
 				hostPort.put(info.split(":")[0], Integer.valueOf(info.split(":")[1]));
 			}
-			List<HttpHost> httpHosts = new ArrayList<>();
-			for (String host : hostPort.keySet()) {
-				httpHosts.add(new HttpHost(host, hostPort.get(host)));
-			}
-			RestClientBuilder builder = RestClient.builder(httpHosts.toArray(new HttpHost[httpHosts.size()]))
+			// Use HTTPS scheme if configured
+		String scheme = Platform.config.hasPath("search.es_scheme")
+				? Platform.config.getString("search.es_scheme") : "http";
+		List<HttpHost> secureHosts = new ArrayList<>();
+		for (String host : hostPort.keySet()) {
+			secureHosts.add(new HttpHost(host, hostPort.get(host), scheme));
+		}
+
+		RestClientBuilder builder = RestClient.builder(secureHosts.toArray(new HttpHost[secureHosts.size()]))
 					.setRequestConfigCallback(new RestClientBuilder.RequestConfigCallback() {
 						@Override
 						public RequestConfig.Builder customizeRequestConfig(RequestConfig.Builder requestConfigBuilder) {
 							return requestConfigBuilder.setConnectionRequestTimeout(-1);
 						}
 					});
+
+			// Add authentication if configured
+			String esUsername = Platform.config.hasPath("search.es_username")
+					? Platform.config.getString("search.es_username") : "";
+			String esPassword = Platform.config.hasPath("search.es_password")
+					? Platform.config.getString("search.es_password") : "";
+			if (!esUsername.isEmpty() && !esPassword.isEmpty()) {
+				final CredentialsProvider credentialsProvider = new BasicCredentialsProvider();
+				credentialsProvider.setCredentials(AuthScope.ANY,
+						new UsernamePasswordCredentials(esUsername, esPassword));
+				builder.setHttpClientConfigCallback(httpClientBuilder ->
+						httpClientBuilder.setDefaultCredentialsProvider(credentialsProvider));
+			}
+
 			RestHighLevelClient client = new RestHighLevelClient(builder);
 			if (null != client)
 				esClient.put(indexName, client);
