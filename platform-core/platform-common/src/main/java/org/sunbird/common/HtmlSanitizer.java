@@ -10,6 +10,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 public class HtmlSanitizer {
@@ -38,8 +39,12 @@ public class HtmlSanitizer {
     private static final Set<String> IGNORE_FIELDS = new HashSet<>(Arrays.asList(
             "createdOn", "lastUpdatedOn", "lastStatusChangedOn", "lastPublishedOn",
             "lastSubmittedOn", "versionDate", "artifactUrl", "downloadUrl", "previewUrl",
-            "streamingUrl", "appIcon", "posterImage", "toc_url"
+            "streamingUrl", "appIcon", "posterImage", "toc_url",
+            "sYS_INTERNAL_LAST_UPDATED_ON", "prevStatus"
     ));
+
+    private static final Pattern TIMESTAMP_PATTERN = Pattern.compile(
+            "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{4})$");
 
     public static String sanitizeStrict(String input) {
         if (StringUtils.isBlank(input)) return input;
@@ -66,6 +71,7 @@ public class HtmlSanitizer {
 
     private static String sanitizeField(String fieldName, String value, int depth) {
         if (StringUtils.isBlank(value) || IGNORE_FIELDS.contains(fieldName) || depth > MAX_DEPTH) return value;
+        if (TIMESTAMP_PATTERN.matcher(value.trim()).matches()) return value;
         if (isJson(value)) {
             return sanitizeJsonString(fieldName, value, depth + 1);
         }
