@@ -12,6 +12,7 @@ import org.leadpony.justify.api.JsonValidationService;
 import org.leadpony.justify.api.ProblemHandler;
 import org.leadpony.justify.api.ValidationConfig;
 import org.leadpony.justify.internal.schema.BasicJsonSchema;
+import org.sunbird.common.HtmlSanitizer;
 import org.sunbird.common.JsonUtils;
 import org.sunbird.schema.ISchemaValidator;
 import org.sunbird.schema.dto.ValidationResult;
@@ -83,12 +84,14 @@ public abstract class BaseSchemaValidator implements ISchemaValidator {
     }
 
     public ValidationResult getStructuredData(Map<String, Object> input) {
+        HtmlSanitizer.sanitizeMap(input);
         Map<String, Object> relations = getRelations(input);
         Map<String, Object> externalData = getExternalProps(input);
         return new ValidationResult(input, relations, externalData);
     }
 
     public ValidationResult validate(Map<String, Object> data) throws Exception {
+        HtmlSanitizer.sanitizeMap(data);
         String dataWithDefaults = withDefaultValues(JsonUtils.serialize(data));
         Map<String, Object> validationDataWithDefaults = cleanEmptyKeys(
                 JsonUtils.deserialize(dataWithDefaults, Map.class));

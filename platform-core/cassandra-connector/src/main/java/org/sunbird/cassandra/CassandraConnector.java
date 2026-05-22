@@ -161,6 +161,15 @@ public class CassandraConnector {
 				.withRetryPolicy(DefaultRetryPolicy.INSTANCE)
 				.withoutJMXReporting();
 
+		// Add authentication if configured
+		String username = Platform.config.hasPath("cassandra.auth.username")
+				? Platform.config.getString("cassandra.auth.username") : "";
+		String password = Platform.config.hasPath("cassandra.auth.password")
+				? Platform.config.getString("cassandra.auth.password") : "";
+		if (!username.isEmpty() && !password.isEmpty()) {
+			builder.withCredentials(username, password);
+		}
+
 		if (level != null)
 			builder.withQueryOptions(new QueryOptions().setConsistencyLevel(level));
 

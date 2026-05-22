@@ -193,6 +193,7 @@ object CopyManager {
     }
 
     def copyURLToFile(objectId: String, fileUrl: String): File = try {
+        org.sunbird.common.SafeUrlValidator.validate(fileUrl)
         val file = new File(getBasePath(objectId) + File.separator + getFileNameFromURL(fileUrl))
         FileUtils.copyURLToFile(new URL(fileUrl), file)
         file
@@ -224,7 +225,20 @@ object CopyManager {
     protected def getFileNameFromURL(fileUrl: String): String = if (!FilenameUtils.getExtension(fileUrl).isEmpty)
         FilenameUtils.getBaseName(fileUrl) + "_" + System.currentTimeMillis + "." + FilenameUtils.getExtension(fileUrl) else FilenameUtils.getBaseName(fileUrl) + "_" + System.currentTimeMillis
 
-    protected def isInternalUrl(url: String)(implicit ss: StorageService): Boolean = url.contains(ss.getContainerName)
+    protected def isInternalUrl(url: String)(implicit ss: StorageService): Boolean = {
+        try {
+            val parsedUrl = new URL(url)
+            val host = parsedUrl.getHost.toLowerCase
+            val containerName = ss.getContainerName
+            val knownDomains = List(".blob.core.windows.net", ".s3.amazonaws.com", ".storage.googleapis.com")
+            val isKnownCloudHost = knownDomains.exists(domain => host.endsWith(domain))
+            val hostMatch = isKnownCloudHost && host.startsWith(containerName + ".")
+            val pathMatch = parsedUrl.getPath.startsWith("/" + containerName + "/")
+            hostMatch || pathMatch
+        } catch {
+            case _: Exception => false
+        }
+    }
 
     def prepareHierarchyRequest(originHierarchy: util.Map[String, AnyRef], originNode: Node, node: Node, copyType: String, request: Request):util.HashMap[String, AnyRef] = {
         val children:util.List[util.Map[String, AnyRef]] = originHierarchy.get("children").asInstanceOf[util.List[util.Map[String, AnyRef]]]
