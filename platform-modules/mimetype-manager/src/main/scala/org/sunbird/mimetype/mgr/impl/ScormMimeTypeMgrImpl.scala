@@ -1,7 +1,11 @@
 package org.sunbird.mimetype.mgr.impl
 
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import java.io.File
+import java.nio.file.Paths
 import javax.xml.parsers.SAXParserFactory
+
 import org.sunbird.cloudstore.StorageService
 import org.sunbird.common.exception.ClientException
 import org.sunbird.graph.OntologyEngineContext
@@ -11,10 +15,13 @@ import org.sunbird.models.UploadParams
 import org.sunbird.telemetry.logger.TelemetryManager
 
 import scala.concurrent.{ExecutionContext, Future, blocking}
-import scala.xml.Elem
+import scala.xml.{Elem, NodeSeq}
 import scala.xml.factory.XMLLoader
 
 class ScormMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeManager()(ss) with MimeTypeManager {
+
+    val mapper = new ObjectMapper()
+    mapper.registerModule(DefaultScalaModule)
 
     override def upload(objectId: String, node: Node, uploadFile: File, filePath: Option[String], params: UploadParams)(implicit ec: ExecutionContext): Future[Map[String, AnyRef]] = {
         validateUploadRequest(objectId, node, uploadFile)
@@ -28,9 +35,19 @@ class ScormMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeMana
 				}
 				val manifestFile = new File(extractionBasePath + File.separator + "imsmanifest.xml")
 				
+                val scoList = blocking {
+                    getScoList(getSecureXml(manifestFile))
+                }
+
+                if (scoList.isEmpty) {
+                    throw new ClientException("ERR_INVALID_FILE", "No SCOs found in imsmanifest.xml!")
+                }
+
 				val launchFile = blocking {
-					getValidatedLaunchFile(extractionBasePath, manifestFile)
+					getValidatedLaunchFile(extractionBasePath, scoList.head("href"))
 				}
+
+                node.getMetadata.put("scoList", mapper.writeValueAsString(scoList))
 
 				val urls: Array[String] = blocking {
 					uploadArtifactToCloud(uploadFile, objectId, filePath)
@@ -40,7 +57,7 @@ class ScormMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeMana
 				blocking {
 					extractPackageInCloud(objectId, uploadFile, node, "snapshot", false)
 				}
-				Future { Map[String, AnyRef]("identifier" -> objectId, "artifactUrl" -> urls(IDX_S3_URL), "size" -> getFileSize(uploadFile).asInstanceOf[AnyRef], "s3Key" -> urls(IDX_S3_KEY), "launchFile" -> launchFile) }
+				Future { Map[String, AnyRef]("identifier" -> objectId, "artifactUrl" -> urls(IDX_S3_URL), "size" -> getFileSize(uploadFile).asInstanceOf[AnyRef], "s3Key" -> urls(IDX_S3_KEY), "launchFile" -> launchFile, "scoList" -> mapper.writeValueAsString(scoList)) }
 			} finally {
 				delete(new File(extractionBasePath))
 			}
@@ -52,43 +69,37 @@ class ScormMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeMana
         }
     }
 
-    private def getValidatedLaunchFile(extractionBasePath: String, manifestFile: File): String = {
-        val xml = getSecureXml(manifestFile)
-        
-        // Resolve launchFile based on manifest hierarchy
-        val defaultOrgId = (xml \\ "organizations").headOption.map(_ \@ "default").getOrElse("")
-        val orgs = (xml \\ "organization")
-        val org = orgs.find(n => (n \@ "identifier") == defaultOrgId)
-        val item = org.flatMap(n => (n \ "item").headOption)
-        val ref = item.map(_ \@ "identifierref")
-        
-        val launchFile = ref.flatMap { r =>
-            (xml \\ "resource").find(n => (n \@ "identifier") == r).map(_ \@ "href")
-        }.getOrElse {
-            TelemetryManager.error("ERR_INVALID_FILE:: Launch file not found in imsmanifest.xml")
-            throw new ClientException("ERR_INVALID_FILE", "Launch file not found in imsmanifest.xml!")
-        }
-
+    private def getValidatedLaunchFile(extractionBasePath: String, launchFile: String): String = {
         if (launchFile.isEmpty) {
             throw new ClientException("ERR_INVALID_FILE", "Invalid launch file path!")
         }
 
         // Validate launchFile containment and existence
-        val combinedFile = new File(extractionBasePath, launchFile)
-        val canonicalBase = new File(extractionBasePath).getCanonicalPath
-        val canonicalLaunch = combinedFile.getCanonicalPath
+        val basePath = Paths.get(extractionBasePath)
+        val launchPath = basePath.resolve(launchFile).normalize()
+        
+        TelemetryManager.info(s"Validating launch file: basePath=$basePath, launchFile=$launchFile, combinedPath=${launchPath.toAbsolutePath}")
 
-        if (!canonicalLaunch.startsWith(canonicalBase + File.separator)) {
+        if (!launchPath.startsWith(basePath)) {
             TelemetryManager.error("ERR_INVALID_FILE:: Potential path traversal detected: " + launchFile)
             throw new ClientException("ERR_INVALID_FILE", "Invalid launch file path!")
         }
 
-        if (!combinedFile.exists() || combinedFile.isDirectory) {
+        if (!launchPath.toFile.exists() || launchPath.toFile.isDirectory) {
             TelemetryManager.error("ERR_INVALID_FILE:: Launch file defined in imsmanifest.xml does not exist or is a directory: " + launchFile)
             throw new ClientException("ERR_INVALID_FILE", "The launch file '" + launchFile + "' specified in imsmanifest.xml is missing or invalid!")
         }
         
         launchFile
+    }
+
+    private def getScoList(xml: Elem): List[Map[String, String]] = {
+        (xml \\ "item").filter(item => (item \@ "identifierref").nonEmpty).map(item => {
+            val ref = item \@ "identifierref"
+            val title = (item \ "title").text
+            val href = (xml \\ "resource").find(res => (res \@ "identifier") == ref).map(_ \@ "href").getOrElse("")
+            Map("identifier" -> (item \@ "identifier"), "title" -> title, "href" -> href)
+        }).toList.asInstanceOf[List[Map[String, String]]]
     }
 
     private def getSecureXml(manifestFile: File): Elem = {
