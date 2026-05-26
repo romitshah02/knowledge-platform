@@ -21,6 +21,7 @@ import org.sunbird.common.exception.ServerException;
 import org.sunbird.search.dto.SearchDTO;
 import org.sunbird.search.util.DefinitionUtil;
 import org.sunbird.search.util.SearchConstants;
+import org.sunbird.search.util.SearchInputValidator;
 import org.sunbird.telemetry.logger.TelemetryManager;
 import scala.concurrent.Future;
 
@@ -262,6 +263,7 @@ public abstract class SearchBaseActor extends AbstractActor {
             Map<String, Object> softConstraints = null;
             if (null != req.get(SearchConstants.softConstraints)) {
                 softConstraints = (Map<String, Object>) req.get(SearchConstants.softConstraints);
+                SearchInputValidator.validateSoftConstraints(softConstraints);
             }
 
             String mode = (String) req.get(SearchConstants.mode);
@@ -316,6 +318,10 @@ public abstract class SearchBaseActor extends AbstractActor {
             List<String> fieldsSearch = getList(req.get(SearchConstants.fields));
             List<String> facets = getList(req.get(SearchConstants.facets));
             Map<String, String> sortBy = (Map<String, String>) req.get(SearchConstants.sort_by);
+            SearchInputValidator.validateFacets(facets);
+            SearchInputValidator.validateSortBy(sortBy);
+            SearchInputValidator.validateExistsFields(exists);
+            SearchInputValidator.validateExistsFields(notExists);
             properties.addAll(getAdditionalFilterProperties(exists, SearchConstants.exists));
             properties.addAll(getAdditionalFilterProperties(notExists, SearchConstants.not_exists));
             // Changing fields to null so that search all fields but returns

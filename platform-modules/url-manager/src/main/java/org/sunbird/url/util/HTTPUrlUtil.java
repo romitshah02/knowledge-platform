@@ -7,6 +7,8 @@ import org.sunbird.common.exception.ServerException;
 import org.sunbird.telemetry.logger.TelemetryManager;
 import org.sunbird.url.common.URLErrorCodes;
 
+import org.sunbird.common.SafeUrlValidator;
+
 import java.io.*;
 import java.net.*;
 import java.util.HashMap;
@@ -27,6 +29,7 @@ public class HTTPUrlUtil {
 	 * @return Map<String, Object>
 	 */
 	public static Map<String, Object> getMetadata(String fileUrl) {
+		SafeUrlValidator.validate(fileUrl);
 		URLConnection conn = null;
 		Map<String, Object> metadata = new HashMap<>();
 		try {
@@ -64,6 +67,7 @@ public class HTTPUrlUtil {
 	 *            path of the directory to save the file
 	 */
 	public static File downloadFile(String fileURL, String saveDir) {
+		SafeUrlValidator.validate(fileURL);
 		HttpURLConnection httpConn = null;
 		InputStream inputStream = null;
 		FileOutputStream outputStream = null;

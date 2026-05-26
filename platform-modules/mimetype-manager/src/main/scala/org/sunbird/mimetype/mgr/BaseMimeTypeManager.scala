@@ -92,6 +92,7 @@ class BaseMimeTypeManager(implicit ss: StorageService) {
 	}
 
 	def copyURLToFile(objectId: String, fileUrl: String): File = try {
+		org.sunbird.common.SafeUrlValidator.validate(fileUrl)
 		val fileName = getBasePath(objectId) + File.separator + getFileNameFromURL(fileUrl)
 		val file = new File(fileName)
 		FileUtils.copyURLToFile(new URL(fileUrl), file)
@@ -134,21 +135,31 @@ class BaseMimeTypeManager(implicit ss: StorageService) {
 	}
 
 	def extractPackage(file: File, basePath: String) = {
+		val baseDir = Paths.get(basePath).normalize()
+		Files.createDirectories(baseDir)
+		val resolvedBaseDir = baseDir.toRealPath()
 		val zipFile = new ZipFile(file)
 		val baseDirPath = Paths.get(basePath).toAbsolutePath.normalize()
-		for (entry <- zipFile.entries().asScala) {
-			val targetPath = Paths.get(basePath + File.separator + entry.getName).toAbsolutePath.normalize()
+		try {
+			for (entry <- zipFile.entries().asScala) {
+				val targetPath = resolvedBaseDir.resolve(entry.getName).normalize()
+				if (!path.startsWith(resolvedBaseDir))
+					throw new ClientException("ERR_INVALID_ZIP_ENTRY",
+						"Zip entry attempts path traversal: " + entry.getName).toAbsolutePath.normalize()
 			
 			// Validate that the entry path is within the base directory
 			if (!targetPath.startsWith(baseDirPath)) {
 				throw new ClientException("ERR_INVALID_FILE", "Invalid zip entry path detected: " + entry.getName)
 			}
 			
-			if (entry.isDirectory) Files.createDirectories(targetPath)
-			else {
-				Files.createDirectories(targetPath.getParent)
-				Files.copy(zipFile.getInputStream(entry), targetPath)
+				if (entry.isDirectory) Files.createDirectories(targetPath)
+				else {
+					Files.createDirectories(targetPath.getParent)
+					Files.copy(zipFile.getInputStream(entry), targetPath)
+				}
 			}
+		} finally {
+			zipFile.close()
 		}
 	}
 

@@ -2,7 +2,7 @@ package org.sunbird.v5.managers
 
 import org.apache.commons.collections4.CollectionUtils
 import org.apache.commons.lang3.StringUtils
-import org.sunbird.common.{DateUtils, JsonUtils, Platform}
+import org.sunbird.common.{DateUtils, HtmlSanitizer, JsonUtils, Platform}
 import org.sunbird.common.dto.{Request, Response, ResponseHandler}
 import org.sunbird.common.exception.{ClientException, ServerException}
 import org.sunbird.graph.OntologyEngineContext
@@ -96,9 +96,10 @@ object AssessmentV5Manager {
 
   def getValidatedNodeForUpdateComment(request: Request, errCode: String)(implicit ec: ExecutionContext, oec: OntologyEngineContext): Future[Node] = {
     val identifier = request.getContext.get("identifier")
-    val commentValue = request.getRequest.get("reviewComment").toString
-    if (commentValue == null || commentValue.trim.isEmpty){
-      throw new ClientException(errCode, "Comment key is missing or value is empty in the request body.")
+    val rawComment = request.getRequest.get("reviewComment")
+    val commentValue = if (rawComment != null) rawComment.toString else ""
+    if (commentValue.trim.isEmpty) {
+      Future.failed(new ClientException(errCode, "Comment key is missing or value is empty in the request body."))
     } else {
       val readReq = request
       readReq.put("identifier", identifier)
@@ -329,13 +330,13 @@ object AssessmentV5Manager {
         case "single" => {
           val correctResp = responseData.getOrDefault("correctResponse", Map().asJava).asInstanceOf[util.Map[String, AnyRef]].get("value").asInstanceOf[Integer]
           val label = options.toList.filter(op => op.get("value").asInstanceOf[Integer] == correctResp).head.get("label").asInstanceOf[String]
-          val answer = """<div class="anwser-container"><div class="anwser-body">answer_html</div></div>""".replace("answer_html", label)
+          val answer = """<div class="anwser-container"><div class="anwser-body">answer_html</div></div>""".replace("answer_html", HtmlSanitizer.escapeHtml(label))
           answer
         }
         case "multiple" => {
           val correctResp = responseData.getOrDefault("correctResponse", Map().asJava).asInstanceOf[util.Map[String, AnyRef]].get("value").asInstanceOf[util.List[Integer]]
           val singleAns = """<div class="anwser-body">answer_html</div>"""
-          val answerList: List[String] = options.toList.filter(op => correctResp.contains(op.get("value").asInstanceOf[Integer])).map(op => singleAns.replace("answer_html", op.get("label").asInstanceOf[String])).toList
+          val answerList: List[String] = options.toList.filter(op => correctResp.contains(op.get("value").asInstanceOf[Integer])).map(op => singleAns.replace("answer_html", HtmlSanitizer.escapeHtml(op.get("label").asInstanceOf[String]))).toList
           val answer = """<div class="anwser-container">answer_div</div>""".replace("answer_div", answerList.mkString(""))
           answer
         }

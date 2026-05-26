@@ -13,6 +13,7 @@ trait RedisConnector {
 	private val PORT = Platform.getInteger("redis.port", 6379)
 	private val MAX_CONNECTIONS = Platform.getInteger("redis.maxConnections", 128)
 	private val INDEX = Platform.getInteger("redis.dbIndex", 0)
+	private val PASSWORD: String = Platform.getString("redis.password", "")
 	protected val isEnabled: Boolean = Platform.getBoolean("redis.enable", false)
 
 	@volatile private var jedisPoolOpt: Option[JedisPool] = None
@@ -22,7 +23,11 @@ trait RedisConnector {
 			case Some(pool) => pool
 			case None =>
 				TelemetryManager.info("Initializing Redis connection pool at " + HOST + ":" + PORT)
-				val pool = new JedisPool(getConfig(), HOST, PORT)
+				val pool = if (PASSWORD.nonEmpty) {
+					new JedisPool(getConfig(), HOST, PORT, 2000, PASSWORD)
+				} else {
+					new JedisPool(getConfig(), HOST, PORT)
+				}
 				jedisPoolOpt = Some(pool)
 				pool
 		}
