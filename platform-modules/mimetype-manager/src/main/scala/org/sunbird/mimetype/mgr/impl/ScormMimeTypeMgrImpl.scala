@@ -18,54 +18,49 @@ import scala.concurrent.{ExecutionContext, Future, blocking}
 import scala.xml.{Elem, NodeSeq}
 import scala.xml.factory.XMLLoader
 
+object ScormMimeTypeMgrImpl {
+    private val mapper: ObjectMapper = new ObjectMapper().registerModule(DefaultScalaModule)
+}
+
 class ScormMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeManager()(ss) with MimeTypeManager {
 
-    val mapper = new ObjectMapper()
-    mapper.registerModule(DefaultScalaModule)
-
     override def upload(objectId: String, node: Node, uploadFile: File, filePath: Option[String], params: UploadParams)(implicit ec: ExecutionContext): Future[Map[String, AnyRef]] = {
-        validateUploadRequest(objectId, node, uploadFile)
-        TelemetryManager.info("SCORM content upload for objectId:: " + objectId)
+        Future {
+            blocking {
+                validateUploadRequest(objectId, node, uploadFile)
+                TelemetryManager.info("SCORM content upload for objectId:: " + objectId)
+                val extractionBasePath = getBasePath(objectId)
+                try {
+                    if (isValidPackageStructure(uploadFile, List("imsmanifest.xml"))) {
+                        extractPackage(uploadFile, extractionBasePath)
+                        val manifestFile = new File(extractionBasePath + File.separator + "imsmanifest.xml")
+                        
+                        val scoList = getScoList(getSecureXml(manifestFile))
 
-		if (isValidPackageStructure(uploadFile, List("imsmanifest.xml"))) {
-			val extractionBasePath = getBasePath(objectId)
-			try {
-				blocking {
-					extractPackage(uploadFile, extractionBasePath)
-				}
-				val manifestFile = new File(extractionBasePath + File.separator + "imsmanifest.xml")
-				
-                val scoList = blocking {
-                    getScoList(getSecureXml(manifestFile))
+                        if (scoList.isEmpty) {
+                            throw new ClientException("ERR_INVALID_FILE", "No SCOs found in imsmanifest.xml!")
+                        }
+
+                        val launchFile = getValidatedLaunchFile(extractionBasePath, scoList.head("href"))
+
+                        node.getMetadata.put("scoList", ScormMimeTypeMgrImpl.mapper.writeValueAsString(scoList))
+
+                        val urls: Array[String] = uploadArtifactToCloud(uploadFile, objectId, filePath)
+                        
+                        node.getMetadata.put("s3Key", urls(IDX_S3_KEY))
+                        node.getMetadata.put("artifactUrl", urls(IDX_S3_URL))
+                        
+                        extractPackageInCloud(objectId, uploadFile, node, "snapshot", false)
+                        
+                        Map[String, AnyRef]("identifier" -> objectId, "artifactUrl" -> urls(IDX_S3_URL), "size" -> getFileSize(uploadFile).asInstanceOf[AnyRef], "s3Key" -> urls(IDX_S3_KEY), "launchFile" -> launchFile, "scoList" -> ScormMimeTypeMgrImpl.mapper.writeValueAsString(scoList))
+                    } else {
+                        TelemetryManager.error("ERR_INVALID_FILE:: " + "Invalid SCORM package structure: imsmanifest.xml not found! with file name: " + uploadFile.getName)
+                        throw new ClientException("ERR_INVALID_FILE", "Invalid SCORM package: imsmanifest.xml is missing!")
+                    }
+                } finally {
+                    delete(new File(extractionBasePath))
                 }
-
-                if (scoList.isEmpty) {
-                    throw new ClientException("ERR_INVALID_FILE", "No SCOs found in imsmanifest.xml!")
-                }
-
-				val launchFile = blocking {
-					getValidatedLaunchFile(extractionBasePath, scoList.head("href"))
-				}
-
-                node.getMetadata.put("scoList", mapper.writeValueAsString(scoList))
-
-				val urls: Array[String] = blocking {
-					uploadArtifactToCloud(uploadFile, objectId, filePath)
-				}
-				node.getMetadata.put("s3Key", urls(IDX_S3_KEY))
-				node.getMetadata.put("artifactUrl", urls(IDX_S3_URL))
-				blocking {
-					extractPackageInCloud(objectId, uploadFile, node, "snapshot", false)
-				}
-				Future { Map[String, AnyRef]("identifier" -> objectId, "artifactUrl" -> urls(IDX_S3_URL), "size" -> getFileSize(uploadFile).asInstanceOf[AnyRef], "s3Key" -> urls(IDX_S3_KEY), "launchFile" -> launchFile, "scoList" -> mapper.writeValueAsString(scoList)) }
-			} finally {
-				delete(new File(extractionBasePath))
-			}
-		} else {
-
-
-            TelemetryManager.error("ERR_INVALID_FILE:: " + "Invalid SCORM package structure: imsmanifest.xml not found! with file name: " + uploadFile.getName)
-            throw new ClientException("ERR_INVALID_FILE", "Invalid SCORM package: imsmanifest.xml is missing!")
+            }
         }
     }
 
@@ -94,12 +89,12 @@ class ScormMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeMana
     }
 
     private def getScoList(xml: Elem): List[Map[String, String]] = {
-        (xml \\ "item").filter(item => (item \@ "identifierref").nonEmpty).map(item => {
+        (xml \\ "item").filter(item => (item \@ "identifierref").nonEmpty).map { item =>
             val ref = item \@ "identifierref"
             val title = (item \ "title").text
             val href = (xml \\ "resource").find(res => (res \@ "identifier") == ref).map(_ \@ "href").getOrElse("")
             Map("identifier" -> (item \@ "identifier"), "title" -> title, "href" -> href)
-        }).toList.asInstanceOf[List[Map[String, String]]]
+        }.toList
     }
 
     private def getSecureXml(manifestFile: File): Elem = {
@@ -111,10 +106,7 @@ class ScormMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeMana
         spf.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
         
         val saxParser = spf.newSAXParser()
-        val xmlLoader = new XMLLoader[Elem] {
-            override def parser = saxParser
-        }
-        xmlLoader.loadFile(manifestFile)
+        scala.xml.XML.withSAXParser(saxParser).loadFile(manifestFile)
     }
 
     override def upload(objectId: String, node: Node, fileUrl: String, filePath: Option[String], params: UploadParams)(implicit ec: ExecutionContext): Future[Map[String, AnyRef]] = {
