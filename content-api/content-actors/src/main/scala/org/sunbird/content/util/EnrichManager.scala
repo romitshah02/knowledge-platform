@@ -1,7 +1,7 @@
 package org.sunbird.content.util
 
 import org.sunbird.common.dto.{Request, Response, ResponseHandler}
-import org.sunbird.common.exception.ClientException
+import org.sunbird.common.exception.{ClientException, ResponseCode}
 import org.sunbird.common.Platform
 import org.sunbird.graph.OntologyEngineContext
 import org.sunbird.graph.nodes.DataNode
@@ -38,7 +38,9 @@ object EnrichManager {
         val mimeType   = Option(node.getMetadata.get("mimeType")).map(_.toString).getOrElse("")
         val objectType = resolveObjectType(mimeType)
         id -> Some((objectType, mimeType))
-      }.recover { case _ => id -> None }
+      }.recover {
+        case e: ClientException if e.getErrCode == ResponseCode.RESOURCE_NOT_FOUND.name() => id -> None
+      }
     }
 
     Future.sequence(readFutures).flatMap { results =>
