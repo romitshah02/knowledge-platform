@@ -108,12 +108,14 @@ public class SemanticQueryStrategy implements QueryStrategy {
         //  - filter()  → kept as filter (no scoring impact)
         //  - mustNot() → kept as mustNot
         //  - must() excluding full-text legs → demoted to filter (kNN owns scoring)
-        //  - should() → dropped entirely
+        //  - should() from implicit-filter wrapping → promoted to filter (they constrain visibility)
+        //  - should() from softConstraints → dropped (scoring boosts, not constraints;
+        //    meaningless when kNN owns scoring)
         //
-        // Soft constraints and OR-operation property clauses live in should() and
-        // are scoring boosts; they have no meaning when kNN owns the score. The
-        // OR-semantics limitation for filters in semantic mode is documented in
-        // docs/semantic-search/API_SPEC.md.
+        // softConstraints are cleared before building the inherited bool so that
+        // prepareSearchQuery never adds a soft-constraint should() clause. Any
+        // remaining should() clauses in the result are implicit-filter wraps from
+        // getSearchQuery (origFilterQry / implFilterQuery) and are safe to promote.
         //
         // Force-disable fuzzy on the inherited build: when fuzzySearch=true,
         // prepareFilteredSearchQuery returns a FunctionScoreQueryBuilder, not a
@@ -133,8 +135,10 @@ public class SemanticQueryStrategy implements QueryStrategy {
         boolean savedFuzzy = dto.isFuzzySearch();
         @SuppressWarnings("rawtypes")
         List<Map> savedProps = dto.getProperties();
+        Map<String, Object> savedSoftConstraints = dto.getSoftConstraints();
         try {
             if (savedFuzzy) dto.setFuzzySearch(false);
+            dto.setSoftConstraints(null);
             @SuppressWarnings("rawtypes")
             List<Map> filterProps = new java.util.ArrayList<>();
             if (savedProps != null) {
@@ -152,13 +156,15 @@ public class SemanticQueryStrategy implements QueryStrategy {
                 // Every remaining must is a property filter (full-text leg
                 // already excluded). Demote to filter so kNN owns scoring.
                 for (QueryBuilder m : bx.must())   finalBool.filter(m);
-                // Implicit-filter shoulds inherited from getSearchQuery — keep
-                // as filters so they constrain rather than just boost.
+                // Implicit-filter shoulds (visibility/status wraps) — promote to
+                // filter so they constrain. Soft-constraint shoulds are excluded
+                // above by clearing softConstraints before the build.
                 for (QueryBuilder s : bx.should()) finalBool.filter(s);
             }
         } finally {
             dto.setProperties(savedProps);
             if (savedFuzzy) dto.setFuzzySearch(true);
+            dto.setSoftConstraints(savedSoftConstraints);
         }
         return finalBool;
     }
