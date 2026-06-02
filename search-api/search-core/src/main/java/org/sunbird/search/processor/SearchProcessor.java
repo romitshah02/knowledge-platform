@@ -38,6 +38,7 @@ import org.sunbird.search.util.SearchConstants;
 import org.sunbird.telemetry.logger.TelemetryManager;
 import scala.concurrent.ExecutionContext;
 import scala.concurrent.Future;
+import scala.runtime.AbstractFunction0;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -71,42 +72,67 @@ public class SearchProcessor {
 			return org.sunbird.search.processor.HybridSearchExecutor.execute(searchDTO, this);
 		}
 		List<Map<String, Object>> groupByFinalList = new ArrayList<Map<String, Object>>();
+		// Semantic mode calls client.embed() — a blocking HTTP call. Run processSearchQuery
+		// on the dedicated embedding pool so the actor dispatcher is never blocked.
+		if (SearchConstants.SEARCH_MODE_SEMANTIC.equals(searchDTO.getSearchMode())) {
+			return Future.apply(new AbstractFunction0<SearchSourceBuilder>() {
+				@Override public SearchSourceBuilder apply() {
+					try { return processSearchQuery(searchDTO, groupByFinalList, true); }
+					catch (Exception e) { throw new RuntimeException(e); }
+				}
+			}, SemanticEmbeddingPool.context()).flatMap(new org.apache.pekko.dispatch.Mapper<SearchSourceBuilder, Future<Map<String, Object>>>() {
+				@Override public Future<Map<String, Object>> apply(SearchSourceBuilder ssb) {
+					Future<SearchResponse> sr;
+					try { sr = ElasticSearchUtil.search(SearchConstants.COMPOSITE_SEARCH_INDEX, ssb); }
+					catch (Exception e) { throw new RuntimeException(e); }
+					return sr.map(new org.apache.pekko.dispatch.Mapper<SearchResponse, Map<String, Object>>() {
+						@Override public Map<String, Object> apply(SearchResponse searchResult) {
+							return buildSearchResponse(searchResult, searchDTO, groupByFinalList, includeResults, true);
+						}
+					}, ExecutionContext.Implicits$.MODULE$.global());
+				}
+			}, ExecutionContext.Implicits$.MODULE$.global());
+		}
 		SearchSourceBuilder query = processSearchQuery(searchDTO, groupByFinalList, true);
 		Future<SearchResponse> searchResponse = ElasticSearchUtil.search(
 				SearchConstants.COMPOSITE_SEARCH_INDEX,
 				query);
 
-		final boolean isSemantic = SearchConstants.SEARCH_MODE_SEMANTIC.equals(searchDTO.getSearchMode());
 		return searchResponse.map(new Mapper<SearchResponse, Map<String, Object>>() {
 			public Map<String, Object> apply(SearchResponse searchResult) {
-				Map<String, Object> resp = new HashMap<>();
-				if (includeResults) {
-					// Semantic mode always surfaces the cosine score so callers
-					// can see kNN relevance; text mode keeps prior contract
-					// (score only when fuzzy was requested).
-					if (searchDTO.isFuzzySearch() || isSemantic) {
-						List<Map> results = ElasticSearchUtil.getDocumentsFromSearchResultWithScore(searchResult);
-						resp.put("results", results);
-					} else {
-						List<Object> results = ElasticSearchUtil.getDocumentsFromSearchResult(searchResult, Map.class);
-						resp.put("results", results);
-					}
-				}
-				Aggregations aggregations = searchResult.getAggregations();
-				if (null != aggregations) {
-					AggregationsResultTransformer transformer = new AggregationsResultTransformer();
-					if(CollectionUtils.isNotEmpty(searchDTO.getFacets())) {
-						resp.put("facets", (List<Map<String, Object>>) ElasticSearchUtil
-								.getCountFromAggregation(aggregations, groupByFinalList, transformer));
-					} else if(CollectionUtils.isNotEmpty(searchDTO.getAggregations())){
-						resp.put("aggregations", aggregateResult(aggregations));
-					}
-
-				}
-				resp.put("count", (int) searchResult.getHits().getTotalHits().value);
-				return resp;
+				return buildSearchResponse(searchResult, searchDTO, groupByFinalList, includeResults, false);
 			}
 		}, ExecutionContext.Implicits$.MODULE$.global());
+	}
+
+	@SuppressWarnings({ "unchecked", "rawtypes" })
+	private Map<String, Object> buildSearchResponse(SearchResponse searchResult, SearchDTO searchDTO,
+			List<Map<String, Object>> groupByFinalList, boolean includeResults, boolean isSemantic) {
+		Map<String, Object> resp = new HashMap<>();
+		if (includeResults) {
+			// Semantic mode always surfaces the cosine score so callers
+			// can see kNN relevance; text mode keeps prior contract
+			// (score only when fuzzy was requested).
+			if (searchDTO.isFuzzySearch() || isSemantic) {
+				List<Map> results = ElasticSearchUtil.getDocumentsFromSearchResultWithScore(searchResult);
+				resp.put("results", results);
+			} else {
+				List<Object> results = ElasticSearchUtil.getDocumentsFromSearchResult(searchResult, Map.class);
+				resp.put("results", results);
+			}
+		}
+		Aggregations aggregations = searchResult.getAggregations();
+		if (null != aggregations) {
+			AggregationsResultTransformer transformer = new AggregationsResultTransformer();
+			if (CollectionUtils.isNotEmpty(searchDTO.getFacets())) {
+				resp.put("facets", (List<Map<String, Object>>) ElasticSearchUtil
+						.getCountFromAggregation(aggregations, groupByFinalList, transformer));
+			} else if (CollectionUtils.isNotEmpty(searchDTO.getAggregations())) {
+				resp.put("aggregations", aggregateResult(aggregations));
+			}
+		}
+		resp.put("count", (int) searchResult.getHits().getTotalHits().value);
+		return resp;
 	}
 
 	public Map<String, Object> processCount(SearchDTO searchDTO) throws Exception {
