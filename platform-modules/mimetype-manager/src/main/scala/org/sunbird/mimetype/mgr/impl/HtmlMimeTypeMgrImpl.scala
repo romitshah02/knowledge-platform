@@ -42,8 +42,9 @@ class HtmlMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeManag
         try {
             upload(objectId, node, file, filePath, params)
         } finally {
-            if (file.exists()) {
-                file.delete()
+            val parentDir = file.getParentFile
+            if (parentDir != null && parentDir.exists()) {
+                org.apache.commons.io.FileUtils.deleteDirectory(parentDir)
             }
         }
     }

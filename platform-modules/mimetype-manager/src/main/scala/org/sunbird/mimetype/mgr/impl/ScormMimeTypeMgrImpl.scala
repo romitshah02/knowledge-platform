@@ -2,8 +2,8 @@ package org.sunbird.mimetype.mgr.impl
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
-import java.io.File
-import java.nio.file.Paths
+import java.io.{File, InputStream}
+import java.util.zip.ZipFile
 import javax.xml.parsers.SAXParserFactory
 
 import org.sunbird.cloudstore.StorageService
@@ -15,8 +15,7 @@ import org.sunbird.models.UploadParams
 import org.sunbird.telemetry.logger.TelemetryManager
 
 import scala.concurrent.{ExecutionContext, Future, blocking}
-import scala.xml.{Elem, NodeSeq}
-import scala.xml.factory.XMLLoader
+import scala.xml.Elem
 
 object ScormMimeTypeMgrImpl {
     private val mapper: ObjectMapper = new ObjectMapper().registerModule(DefaultScalaModule)
@@ -29,19 +28,21 @@ class ScormMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeMana
             blocking {
                 validateUploadRequest(objectId, node, uploadFile)
                 TelemetryManager.info("SCORM content upload for objectId:: " + objectId)
-                val extractionBasePath = getBasePath(objectId)
-                try {
-                    if (isValidPackageStructure(uploadFile, List("imsmanifest.xml"))) {
-                        extractPackage(uploadFile, extractionBasePath)
-                        val manifestFile = new File(extractionBasePath + File.separator + "imsmanifest.xml")
-                        
-                        val scoList = getScoList(getSecureXml(manifestFile))
+                if (isValidPackageStructure(uploadFile, List("imsmanifest.xml"))) {
+                    val zipFile = new ZipFile(uploadFile)
+                    try {
+                        val manifestStream = zipFile.getInputStream(zipFile.getEntry("imsmanifest.xml"))
+                        val scoList = try {
+                            getScoList(getSecureXml(manifestStream))
+                        } finally {
+                            manifestStream.close()
+                        }
 
                         if (scoList.isEmpty) {
                             throw new ClientException("ERR_INVALID_FILE", "No SCOs found in imsmanifest.xml!")
                         }
 
-                        val launchFile = getValidatedLaunchFile(extractionBasePath, scoList.head.getOrElse("href", ""))
+                        val launchFile = getValidatedLaunchFile(zipFile, scoList.head.getOrElse("href", ""))
 
                         node.getMetadata.put("scoList", ScormMimeTypeMgrImpl.mapper.writeValueAsString(scoList))
 
@@ -53,34 +54,34 @@ class ScormMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeMana
                         extractPackageInCloud(objectId, uploadFile, node, "snapshot", false)
                         
                         Map[String, AnyRef]("identifier" -> objectId, "artifactUrl" -> urls(IDX_S3_URL), "size" -> getFileSize(uploadFile).asInstanceOf[AnyRef], "s3Key" -> urls(IDX_S3_KEY), "launchFile" -> launchFile, "scoList" -> ScormMimeTypeMgrImpl.mapper.writeValueAsString(scoList))
-                    } else {
-                        TelemetryManager.error("ERR_INVALID_FILE:: " + "Invalid SCORM package structure: imsmanifest.xml not found! with file name: " + uploadFile.getName)
-                        throw new ClientException("ERR_INVALID_FILE", "Invalid SCORM package: imsmanifest.xml is missing!")
+                    } finally {
+                        zipFile.close()
                     }
-                } finally {
-                    delete(new File(extractionBasePath))
+                } else {
+                    TelemetryManager.error("ERR_INVALID_FILE:: " + "Invalid SCORM package structure: imsmanifest.xml not found! with file name: " + uploadFile.getName)
+                    throw new ClientException("ERR_INVALID_FILE", "Invalid SCORM package: imsmanifest.xml is missing!")
                 }
             }
         }
     }
 
-    private def getValidatedLaunchFile(extractionBasePath: String, launchFile: String): String = {
+    private def getValidatedLaunchFile(zipFile: ZipFile, launchFile: String): String = {
         if (launchFile.isEmpty) {
             throw new ClientException("ERR_INVALID_FILE", "Invalid launch file path!")
         }
 
-        // Validate launchFile containment and existence
-        val basePath = Paths.get(extractionBasePath)
+        val basePath = java.nio.file.Paths.get("virtual-base")
         val launchPath = basePath.resolve(launchFile).normalize()
         
-        TelemetryManager.info(s"Validating launch file: basePath=$basePath, launchFile=$launchFile, combinedPath=${launchPath.toAbsolutePath}")
+        TelemetryManager.info(s"Validating launch file: launchFile=$launchFile, normalizedPath=${launchPath.toString}")
 
         if (!launchPath.startsWith(basePath)) {
             TelemetryManager.error("ERR_INVALID_FILE:: Potential path traversal detected: " + launchFile)
             throw new ClientException("ERR_INVALID_FILE", "Invalid launch file path!")
         }
 
-        if (!launchPath.toFile.exists() || launchPath.toFile.isDirectory) {
+        val entry = zipFile.getEntry(launchFile)
+        if (entry == null || entry.isDirectory) {
             TelemetryManager.error("ERR_INVALID_FILE:: Launch file defined in imsmanifest.xml does not exist or is a directory: " + launchFile)
             throw new ClientException("ERR_INVALID_FILE", "The launch file '" + launchFile + "' specified in imsmanifest.xml is missing or invalid!")
         }
@@ -97,7 +98,7 @@ class ScormMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeMana
         }.toList
     }
 
-    private def getSecureXml(manifestFile: File): Elem = {
+    private def getSecureXml(inputStream: InputStream): Elem = {
         val spf = SAXParserFactory.newInstance()
         spf.setNamespaceAware(true)
         spf.setFeature("http://xml.org/sax/features/external-general-entities", false)
@@ -106,7 +107,7 @@ class ScormMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeMana
         spf.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
         
         val saxParser = spf.newSAXParser()
-        scala.xml.XML.withSAXParser(saxParser).loadFile(manifestFile)
+        scala.xml.XML.withSAXParser(saxParser).load(inputStream)
     }
 
     override def upload(objectId: String, node: Node, fileUrl: String, filePath: Option[String], params: UploadParams)(implicit ec: ExecutionContext): Future[Map[String, AnyRef]] = {
@@ -115,8 +116,9 @@ class ScormMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeMana
         try {
             upload(objectId, node, file, filePath, params)
         } finally {
-            if (file.exists()) {
-                file.delete()
+            val parentDir = file.getParentFile
+            if (parentDir != null && parentDir.exists()) {
+                org.apache.commons.io.FileUtils.deleteDirectory(parentDir)
             }
         }
     }
