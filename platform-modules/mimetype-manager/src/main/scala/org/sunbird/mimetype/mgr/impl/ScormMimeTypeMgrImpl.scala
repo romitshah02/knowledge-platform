@@ -41,7 +41,7 @@ class ScormMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeMana
                             throw new ClientException("ERR_INVALID_FILE", "No SCOs found in imsmanifest.xml!")
                         }
 
-                        val launchFile = getValidatedLaunchFile(extractionBasePath, scoList.head("href"))
+                        val launchFile = getValidatedLaunchFile(extractionBasePath, scoList.head.getOrElse("href", ""))
 
                         node.getMetadata.put("scoList", ScormMimeTypeMgrImpl.mapper.writeValueAsString(scoList))
 
@@ -112,7 +112,13 @@ class ScormMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeMana
     override def upload(objectId: String, node: Node, fileUrl: String, filePath: Option[String], params: UploadParams)(implicit ec: ExecutionContext): Future[Map[String, AnyRef]] = {
         validateUploadRequest(objectId, node, fileUrl)
         val file = copyURLToFile(objectId, fileUrl)
-        upload(objectId, node, file, filePath, params)
+        try {
+            upload(objectId, node, file, filePath, params)
+        } finally {
+            if (file.exists()) {
+                file.delete()
+            }
+        }
     }
 
     override def review(objectId: String, node: Node)(implicit ec: ExecutionContext, ontologyEngineContext: OntologyEngineContext): Future[Map[String, AnyRef]] = {

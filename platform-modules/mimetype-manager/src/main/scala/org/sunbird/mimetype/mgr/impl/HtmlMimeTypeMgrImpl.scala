@@ -11,7 +11,7 @@ import org.sunbird.mimetype.mgr.{BaseMimeTypeManager, MimeTypeManager}
 import org.sunbird.telemetry.logger.TelemetryManager
 import org.sunbird.common.Platform
 
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.{ExecutionContext, Future, blocking}
 
 class HtmlMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeManager with MimeTypeManager {
 
@@ -20,13 +20,17 @@ class HtmlMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeManag
         val isIndexHtmlValidationRequired: Boolean = if (Platform.config.hasPath("isIndexHtmlValidationRequired")) Platform.config.getBoolean("isIndexHtmlValidationRequired") else true
         val isValidateSuccess: Boolean = if (isIndexHtmlValidationRequired) isValidPackageStructure(uploadFile, List[String]("index.html")) else true
         if (isValidateSuccess) {
-            val urls = uploadArtifactToCloud(uploadFile, objectId, filePath)
-            node.getMetadata.put("s3Key", urls(IDX_S3_KEY))
-            node.getMetadata.put("artifactUrl", urls(IDX_S3_URL))
-            extractPackageInCloud(objectId, uploadFile, node, "snapshot", false)
-            Future(Map[String, AnyRef]("identifier" -> objectId, "artifactUrl" -> urls(IDX_S3_URL), "s3Key" -> urls(IDX_S3_KEY), "size" -> getFileSize(uploadFile).asInstanceOf[AnyRef]))
+            Future {
+                blocking {
+                    val urls = uploadArtifactToCloud(uploadFile, objectId, filePath)
+                    node.getMetadata.put("s3Key", urls(IDX_S3_KEY))
+                    node.getMetadata.put("artifactUrl", urls(IDX_S3_URL))
+                    extractPackageInCloud(objectId, uploadFile, node, "snapshot", false)
+                    Map[String, AnyRef]("identifier" -> objectId, "artifactUrl" -> urls(IDX_S3_URL), "s3Key" -> urls(IDX_S3_KEY), "size" -> getFileSize(uploadFile).asInstanceOf[AnyRef])
+                }
+            }
         } else {
-            TelemetryManager.error("ERR_INVALID_FILE" + "Please Provide Valid File! with file name: " + uploadFile.getName)
+            TelemetryManager.error("ERR_INVALID_FILE:: " + "Please Provide Valid File! with file name: " + uploadFile.getName)
             throw new ClientException("ERR_INVALID_FILE", "Please Provide Valid File!")
         }
 
@@ -35,7 +39,13 @@ class HtmlMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeManag
     override def upload(objectId: String, node: Node, fileUrl: String, filePath: Option[String], params: UploadParams)(implicit ec: ExecutionContext): Future[Map[String, AnyRef]] = {
         validateUploadRequest(objectId, node, fileUrl)
         val file = copyURLToFile(objectId, fileUrl)
-        upload(objectId, node, file, filePath, params)
+        try {
+            upload(objectId, node, file, filePath, params)
+        } finally {
+            if (file.exists()) {
+                file.delete()
+            }
+        }
     }
 
     override def review(objectId: String, node: Node)(implicit ec: ExecutionContext, ontologyEngineContext: OntologyEngineContext): Future[Map[String, AnyRef]] = {
