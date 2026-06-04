@@ -8,11 +8,10 @@ import org.sunbird.search.processor.SearchProcessor;
  * Strategy for building the OpenSearch query for a single search request.
  *
  * Implementations are stateless and thread-safe. The factory returns shared
- * singletons.
- *
- * Phase 1 ships only TextQueryStrategy (delegates to the existing logic on
- * SearchProcessor). Phase 2 adds SemanticQueryStrategy; Phase 3 adds
- * HybridQueryStrategy.
+ * singletons. Three strategies available:
+ *  - TextQueryStrategy: existing keyword search (delegates to SearchProcessor)
+ *  - SemanticQueryStrategy: nested kNN on int8-quantized vectors
+ *  - HybridQueryStrategy: parallel text + semantic, fused via RRF
  */
 public interface QueryStrategy {
 
@@ -23,8 +22,7 @@ public interface QueryStrategy {
      * Build the OpenSearch QueryBuilder for the given DTO.
      * The processor is supplied so the strategy can call back into shared
      * helpers (filter parsing, soft constraints, implicit filters, etc.)
-     * without those helpers needing to be hoisted out of SearchProcessor in
-     * Phase 1.
+     * without duplicating logic across strategies.
      */
     QueryBuilder build(SearchDTO dto, SearchProcessor processor) throws Exception;
 }

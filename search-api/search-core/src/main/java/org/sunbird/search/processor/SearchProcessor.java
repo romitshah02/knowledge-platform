@@ -976,8 +976,8 @@ public class SearchProcessor {
 
 	/**
 	 * Exposed for QueryStrategy implementations. TextQueryStrategy delegates here
-	 * so existing behaviour is unchanged; semantic / hybrid strategies in later
-	 * phases build their own QueryBuilder without going through this method.
+	 * for unchanged existing behaviour. Semantic and hybrid strategies call this
+	 * to build filter sets, then compose with their own query logic (kNN, RRF).
 	 */
 	public QueryBuilder buildTextQuery(SearchDTO searchDTO) {
 		return getSearchQuery(searchDTO);

@@ -20,7 +20,7 @@ public class SearchDTO {
     private Map<String, Object> softConstraints = new HashMap<String, Object>();
     private List<Map<String, Object>> aggregations = new ArrayList<>();
     private List<Map> implicitFilterProperties;
-    // Phase 1: semantic-search mode dispatch. Default "text" preserves existing behaviour.
+    // Semantic-search mode dispatch: text (default), semantic, or hybrid.
     private String searchMode = "text";
     private Map<String, Object> semanticParams = new HashMap<>();
 

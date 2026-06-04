@@ -348,7 +348,7 @@ public abstract class SearchBaseActor extends AbstractActor {
                 searchObj.setFuzzySearch(fuzzySearch);
             }
 
-            // Phase 1: parse search_mode (default text) and the optional semantic block.
+            // Parse search_mode (default text) and the optional semantic block.
             // Validation of values happens in the strategy layer.
             String searchMode = (String) req.get(SearchConstants.search_mode);
             searchObj.setSearchMode(searchMode);

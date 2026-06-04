@@ -7,7 +7,7 @@ import org.sunbird.search.util.SearchConstants;
 
 /**
  * Existing text-search behaviour. Delegates to the SearchProcessor's existing
- * query builder unchanged. Phase 1: zero behavioural delta vs pre-refactor.
+ * query builder unchanged — zero behavioural delta vs pre-refactor architecture.
  */
 public class TextQueryStrategy implements QueryStrategy {
 

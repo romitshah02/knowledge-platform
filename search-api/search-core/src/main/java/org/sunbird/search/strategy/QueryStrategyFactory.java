@@ -9,12 +9,11 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Returns the {@link QueryStrategy} for a given mode.
+ * Returns the {@link QueryStrategy} for a given mode: text, semantic, or hybrid.
  *
- * Phase 1 ships only the text strategy. Phase 2 will register a semantic
- * strategy; Phase 3 a hybrid strategy. Registration happens via {@link #register}
- * from initialisation code so this factory has no compile-time dependency on
- * embedding clients.
+ * Registration happens via {@link #register} during initialization. Semantic and
+ * hybrid strategies are registered only when semantic_search.enabled=true, so
+ * this factory has no compile-time dependency on embedding clients.
  */
 public class QueryStrategyFactory {
 
