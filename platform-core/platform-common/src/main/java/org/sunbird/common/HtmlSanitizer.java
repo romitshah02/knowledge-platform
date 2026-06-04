@@ -40,7 +40,7 @@ public class HtmlSanitizer {
             "createdOn", "lastUpdatedOn", "lastStatusChangedOn", "lastPublishedOn",
             "lastSubmittedOn", "versionDate", "artifactUrl", "downloadUrl", "previewUrl",
             "streamingUrl", "appIcon", "posterImage", "toc_url",
-            "sYS_INTERNAL_LAST_UPDATED_ON", "prevStatus"
+            "sYS_INTERNAL_LAST_UPDATED_ON", "prevStatus", "mimeType"
     ));
 
     private static final Pattern TIMESTAMP_PATTERN = Pattern.compile(

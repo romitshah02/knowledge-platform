@@ -283,6 +283,15 @@ public class HtmlSanitizerTest {
     }
 
     @Test
+    public void testSanitizeMapPreservesMimeType() {
+        Map<String, Object> data = new HashMap<>();
+        data.put("mimeType", "image/svg+xml");
+        data.put("name", "Test Asset");
+        HtmlSanitizer.sanitizeMap(data);
+        Assert.assertEquals("image/svg+xml", data.get("mimeType"));
+    }
+
+    @Test
     public void testSanitizeMapWithFrameworkXssPayload() {
         Map<String, Object> data = new HashMap<>();
         data.put("name", "<script>alert('xss-framework')</script>");
