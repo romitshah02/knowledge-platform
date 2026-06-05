@@ -36,6 +36,14 @@ public class EnrichActor extends SearchBaseActor {
     }
 
     @Override
+    public void preStart() throws Exception {
+        super.preStart();
+        org.sunbird.search.client.ElasticSearchUtil.initialiseESClient(
+                SearchConstants.COMPOSITE_SEARCH_INDEX,
+                Platform.config.getString("search.es_conn_info"));
+    }
+
+    @Override
     public Future<Response> onReceive(Request request) throws Throwable {
         if ("triggerEnrich".equals(request.getOperation())) {
             return triggerEnrich(request);
@@ -49,10 +57,6 @@ public class EnrichActor extends SearchBaseActor {
         String topic = Platform.config.hasPath("kafka.publish.request.topic")
                 ? Platform.config.getString("kafka.publish.request.topic")
                 : "sunbirddev.publish.job.request";
-
-        org.sunbird.search.client.ElasticSearchUtil.initialiseESClient(
-                SearchConstants.COMPOSITE_SEARCH_INDEX,
-                Platform.config.getString("search.es_conn_info"));
 
         return scala.concurrent.Future.apply(new scala.runtime.AbstractFunction0<Response>() {
             @Override
