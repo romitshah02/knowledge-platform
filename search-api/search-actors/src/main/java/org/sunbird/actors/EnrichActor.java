@@ -34,6 +34,16 @@ public class EnrichActor extends SearchBaseActor {
         return KAFKA_CLIENT;
     }
 
+    /** Test hook — inject a mock KafkaClient. */
+    static void overrideKafkaClientForTest(KafkaClient client) {
+        synchronized (EnrichActor.class) { KAFKA_CLIENT = client; }
+    }
+
+    /** Test hook — reset to force lazy re-init. */
+    static void resetKafkaClientForTest() {
+        synchronized (EnrichActor.class) { KAFKA_CLIENT = null; }
+    }
+
     @Override
     public void preStart() throws Exception {
         super.preStart();
