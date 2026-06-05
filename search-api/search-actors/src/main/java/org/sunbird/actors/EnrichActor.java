@@ -9,7 +9,6 @@ import org.sunbird.common.exception.ClientException;
 import org.sunbird.kafka.client.KafkaClient;
 import org.sunbird.search.util.SearchConstants;
 import org.sunbird.telemetry.logger.TelemetryManager;
-import scala.concurrent.ExecutionContext;
 import scala.concurrent.Future;
 
 import java.util.*;
@@ -112,7 +111,7 @@ public class EnrichActor extends SearchBaseActor {
                     throw new RuntimeException("EnrichActor: failed to fetch documents from index", e);
                 }
             }
-        }, ExecutionContext.Implicits$.MODULE$.global());
+        }, org.sunbird.search.processor.SemanticEmbeddingPool.context());
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})
