@@ -76,13 +76,14 @@ class QuestionActor @Inject()(implicit oec: OntologyEngineContext) extends Abstr
   }
 
   def listQuestions(request: Request): Future[Response] = {
-    RequestUtil.validateListRequest(request)
-    val fields: util.List[String] = request.get("fields").asInstanceOf[String].split(",").filter(field => StringUtils.isNotBlank(field) && !StringUtils.equalsIgnoreCase(field, "null")).toList.asJava
-    request.getRequest.put("fields", fields)
-    DataNode.search(request).map(nodeList => {
-      val questionList = nodeList.map(node => AssessmentV5Manager.getQuestionMetadata(node, fields, List().asJava)).asJava
-      ResponseHandler.OK.put("questions", questionList).put("count", questionList.size)
-    })
+    Future(RequestUtil.validateListRequest(request)).flatMap { _ =>
+      val fields: util.List[String] = request.get("fields").asInstanceOf[String].split(",").filter(field => StringUtils.isNotBlank(field) && !StringUtils.equalsIgnoreCase(field, "null")).toList.asJava
+      request.getRequest.put("fields", fields)
+      DataNode.search(request).map(nodeList => {
+        val questionList = nodeList.map(node => AssessmentV5Manager.getQuestionMetadata(node, fields, List().asJava)).asJava
+        ResponseHandler.OK.put("questions", questionList).put("count", questionList.size)
+      })
+    }
   }
 
   def privateRead(request: Request)(implicit oec: OntologyEngineContext, ec: ExecutionContext): Future[Response] = {
