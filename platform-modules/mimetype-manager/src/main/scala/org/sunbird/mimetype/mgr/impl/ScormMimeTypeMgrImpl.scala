@@ -45,8 +45,8 @@ class ScormMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeMana
                         scoList.foreach(sco => getValidatedLaunchFile(extractionBasePath, sco.getOrElse("href", "")))
                         
                         val launchFile = scoList.head.getOrElse("href", "")
-                        // val scoListJson = ScormMimeTypeMgrImpl.mapper.writeValueAsString(scoList)
-                        val scoListJsonObj = Json.toJson(scoList)
+        
+                        val scoListJson = ScormMimeTypeMgrImpl.mapper.writeValueAsString(scoList)
                         // removed manual node.getMetadata.put calls
 
                         val urls: Array[String] = uploadArtifactToCloud(uploadFile, objectId, filePath)
@@ -59,7 +59,7 @@ class ScormMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeMana
                             "s3Key"       -> urls(IDX_S3_KEY),
                             "size"        -> getFileSize(uploadFile).asInstanceOf[AnyRef],
                             "launchFile"  -> launchFile,
-                            "scoList"     -> scoListJsonObj
+                            "scoList"     -> scoListJson
                         )
 
                     } else {
@@ -108,7 +108,15 @@ private def getValidatedLaunchFile(extractionBasePath: String, launchFile: Strin
           .map(_ \@ "href")
           .getOrElse("")
         
-        val parameters = item \@ "parameters"
+        val parameters = (item \@ "parameters")
+                        .replace("&#61;", "=") 
+                        .replace("&#64;", "@")  
+                        .replace("&#63;", "?")   
+                        .replace("&amp;", "&")
+                        .replace("&lt;", "<")
+                        .replace("&gt;", ">")
+                        .replace("&quot;", "\"")
+                        .replace("&apos;", "'")
         val finalHref = if (parameters.nonEmpty) baseHref + parameters else baseHref
 
         Map(
