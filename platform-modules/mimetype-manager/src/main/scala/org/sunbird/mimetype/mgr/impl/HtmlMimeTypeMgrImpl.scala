@@ -20,12 +20,12 @@ class HtmlMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeManag
         val isIndexHtmlValidationRequired: Boolean = if (Platform.config.hasPath("isIndexHtmlValidationRequired")) Platform.config.getBoolean("isIndexHtmlValidationRequired") else true
         val isValidateSuccess: Boolean = if (isIndexHtmlValidationRequired) isValidPackageStructure(uploadFile, List[String]("index.html")) else true
         if (isValidateSuccess) {
-                val urls = uploadArtifactToCloud(uploadFile, objectId, filePath)
-                node.getMetadata.put("s3Key", urls(IDX_S3_KEY))
-                node.getMetadata.put("artifactUrl", urls(IDX_S3_URL))
-                extractPackageInCloud(objectId, uploadFile, node, "snapshot", false)
-                Future(Map[String, AnyRef]("identifier" -> objectId, "artifactUrl" -> urls(IDX_S3_URL), "s3Key" -> urls(IDX_S3_KEY), "size" -> getFileSize(uploadFile).asInstanceOf[AnyRef]))        
-                } else {
+            val urls = uploadArtifactToCloud(uploadFile, objectId, filePath)
+            node.getMetadata.put("s3Key", urls(IDX_S3_KEY))
+            node.getMetadata.put("artifactUrl", urls(IDX_S3_URL))
+            extractPackageInCloud(objectId, uploadFile, node, "snapshot", false)
+            Future(Map[String, AnyRef]("identifier" -> objectId, "artifactUrl" -> urls(IDX_S3_URL), "s3Key" -> urls(IDX_S3_KEY), "size" -> getFileSize(uploadFile).asInstanceOf[AnyRef]))
+        } else {
             TelemetryManager.error("ERR_INVALID_FILE" + "Please Provide Valid File! with file name: " + uploadFile.getName)
             throw new ClientException("ERR_INVALID_FILE", "Please Provide Valid File!")
         }
