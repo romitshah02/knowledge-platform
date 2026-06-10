@@ -13,7 +13,7 @@ import org.sunbird.graph.dac.model.Node
 import org.sunbird.mimetype.mgr.{BaseMimeTypeManager, MimeTypeManager}
 import org.sunbird.models.UploadParams
 import org.sunbird.telemetry.logger.TelemetryManager
-
+import java.util
 import scala.concurrent.{ExecutionContext, Future, blocking}
 import scala.xml.{Elem, NodeSeq}
 import scala.xml.factory.XMLLoader
@@ -44,8 +44,13 @@ class ScormMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeMana
                         
                         val launchFile = scoList.head.getOrElse("href", "")
         
-                        val scoListJson = ScormMimeTypeMgrImpl.mapper.writeValueAsString(scoList)
-                        // removed manual node.getMetadata.put calls
+                        val javaScoList = new util.ArrayList[util.Map[String, String]]()
+
+                        scoList.foreach { sco =>
+                                            val javaMap = new util.HashMap[String, String]()
+                                            sco.foreach { case (k, v) => javaMap.put(k, v) }
+                                            javaScoList.add(javaMap)
+                                        }
 
                         val urls: Array[String] = uploadArtifactToCloud(uploadFile, objectId, filePath)
                         
@@ -58,7 +63,7 @@ class ScormMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeMana
                                 "s3Key"       -> urls(IDX_S3_KEY),
                                 "size"        -> getFileSize(uploadFile).asInstanceOf[AnyRef],
                                 "launchFile"  -> launchFile,
-                                "scoList"     -> scoListJson
+                                "scoList"     -> javaScoList 
                             )
                         )
 

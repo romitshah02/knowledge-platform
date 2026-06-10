@@ -120,6 +120,7 @@ public class HtmlSanitizer {
         if (data == null || data.isEmpty() || depth > MAX_DEPTH) return;
         List<String> keys = data.keySet().stream().collect(Collectors.toList());
         for (String key : keys) {
+            if (IGNORE_FIELDS.contains(key)) continue;
             Object value = data.get(key);
             if (value instanceof String) {
                 data.put(key, sanitizeField(key, (String) value, depth + 1));
@@ -135,6 +136,7 @@ public class HtmlSanitizer {
 
     private static void sanitizeList(String parentKey, List<Object> list, int depth) {
         if (list == null || list.isEmpty() || depth > MAX_DEPTH) return;
+        if (IGNORE_FIELDS.contains(parentKey)) return;
         for (int i = 0; i < list.size(); i++) {
             Object item = list.get(i);
             if (item instanceof String) {
