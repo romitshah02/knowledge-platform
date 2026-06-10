@@ -23,6 +23,9 @@
     "launchFile": {
       "type": "string"
     },
+    "scormVersion": {
+      "type": "string"
+    },
     "scoList": {
       "type": "array",
       "items": {
