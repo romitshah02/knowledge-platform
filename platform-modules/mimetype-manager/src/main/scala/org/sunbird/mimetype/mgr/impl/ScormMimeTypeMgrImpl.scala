@@ -17,9 +17,9 @@ import scala.xml.Elem
 class ScormMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeManager()(ss) with MimeTypeManager {
 
     override def upload(objectId: String, node: Node, uploadFile: File, filePath: Option[String], params: UploadParams)(implicit ec: ExecutionContext): Future[Map[String, AnyRef]] = {
-        validateUploadRequest(objectId, node, uploadFile)
-        TelemetryManager.info("SCORM content upload for objectId:: " + objectId)
-        val extractionBasePath = getBasePath(objectId)
+            validateUploadRequest(objectId, node, uploadFile)
+            TelemetryManager.info("SCORM content upload for objectId:: " + objectId)
+            val extractionBasePath = getBasePath(objectId)
         try {
             if (isValidPackageStructure(uploadFile, List("imsmanifest.xml"))) {
                 extractPackage(uploadFile, extractionBasePath)
@@ -98,7 +98,7 @@ class ScormMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeMana
         schemaVersion match {
             case "1.2"                   => "1.2"
             case v if v.startsWith("2004") => "2004"
-            case "cam 1.3"               => "2004" 
+            case "1.3" if schema == "cam" => "2004" 
             case _ if schema.contains("adl scorm") => "2004"
             case _ =>
                 TelemetryManager.error(s"Unsupported SCORM version: schema='$schema' schemaversion='$schemaVersion'")
@@ -126,7 +126,7 @@ class ScormMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeMana
                         res \@ "scormType"                                               
                     ).find(_.nonEmpty).getOrElse("").trim.toLowerCase
 
-                    st == "sco" || st.isEmpty
+                    st == "sco" || (st.isEmpty && scormVersion == "1.2")
                 }
             }
 
