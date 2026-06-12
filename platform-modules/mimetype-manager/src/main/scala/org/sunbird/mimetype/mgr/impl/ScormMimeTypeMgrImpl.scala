@@ -118,10 +118,9 @@ private def getValidatedLaunchFile(extractionBasePath: String, launchFile: Strin
 
     private def getScoList(xml: Elem, scormVersion: String): List[Map[String, String]] = {
 
-        val xmlBaseNs     = "{http://www.w3.org/XML/1998/namespace}base"
-        val manifestBase  = xml \@ xmlBaseNs
+        val manifestBase  = xml.attributes.find(_.key == "base").map(_.value.text).getOrElse("")
         val resourcesElem = (xml \ "resources").headOption.getOrElse(<resources/>)
-        val resourcesBase = resourcesElem \@ xmlBaseNs
+        val resourcesBase = resourcesElem.attributes.find(_.key == "base").map(_.value.text).getOrElse("")
 
         (xml \\ "item").filter(item => (item \@ "identifierref").nonEmpty).flatMap { item =>
             val ref   = item \@ "identifierref"
@@ -129,18 +128,13 @@ private def getValidatedLaunchFile(extractionBasePath: String, launchFile: Strin
 
             val resourceNode = (xml \\ "resource").find { res =>
                 (res \@ "identifier") == ref && {
-                    val st = Seq(
-                        res \@ "{http://www.adlnet.org/xsd/adlcp_v1p3}scormType",       
-                        res \@ "{http://www.adlnet.org/xsd/adlcp_rootv1p2}scormType",   
-                        res \@ "scormType"                                               
-                    ).find(_.nonEmpty).getOrElse("").trim.toLowerCase
-
+                    val st = res.attributes.find(_.key == "scormType").map(_.value.text).getOrElse("").trim.toLowerCase
                     st == "sco" || (st.isEmpty && scormVersion == "1.2")
                 }
             }
 
             resourceNode.map { res =>
-                val resourceBase = res \@ xmlBaseNs
+                val resourceBase = res.attributes.find(_.key == "base").map(_.value.text).getOrElse("")
                 val rawHref      = res \@ "href"
 
                 val baseHref = manifestBase + resourcesBase + resourceBase + rawHref
