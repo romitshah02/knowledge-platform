@@ -33,10 +33,11 @@ class ScormMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeMana
 
                         // Validate all SCO hrefs up-front
                         scoList.foreach(sco => getValidatedLaunchFile(extractionBasePath, sco.getOrElse("href", "")))
-
+                        
                         val launchFile = scoList.head.getOrElse("href", "")
-
+        
                         val javaScoList = new util.ArrayList[util.Map[String, String]]()
+
                         scoList.foreach { sco =>
                                             val javaMap = new util.HashMap[String, String]()
                                             sco.foreach { case (k, v) => javaMap.put(k, v) }
@@ -44,6 +45,7 @@ class ScormMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeMana
                                         }
 
                         val urls: Array[String] = uploadArtifactToCloud(uploadFile, objectId, filePath)
+                        
                         extractPackageInCloud(objectId, uploadFile, node, "snapshot", false)
 
                         Future(
@@ -67,22 +69,6 @@ class ScormMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeMana
                 }
     }
 
-    override def upload(objectId: String, node: Node, fileUrl: String, filePath: Option[String], params: UploadParams)(implicit ec: ExecutionContext): Future[Map[String, AnyRef]] = {
-        validateUploadRequest(objectId, node, fileUrl)
-        val file = copyURLToFile(objectId, fileUrl)
-        upload(objectId, node, file, filePath, params)
-    }
-
-    override def review(objectId: String, node: Node)(implicit ec: ExecutionContext, ontologyEngineContext: OntologyEngineContext): Future[Map[String, AnyRef]] = {
-        validate(node, "[SCORM file should be uploaded for further processing!]")
-        Future(getEnrichedMetadata(node.getMetadata.getOrDefault("status", "").asInstanceOf[String]))
-    }
-
-    override def publish(objectId: String, node: Node)(implicit ec: ExecutionContext, ontologyEngineContext: OntologyEngineContext): Future[Map[String, AnyRef]] = {
-        validate(node, "[SCORM file should be uploaded for further processing!]")
-        Future(getEnrichedPublishMetadata(node.getMetadata.getOrDefault("status", "").asInstanceOf[String]))
-    }
-
     private def detectScormVersion(xml: Elem): String = {
 
         val manifestMeta  = xml \ "metadata"
@@ -103,6 +89,32 @@ class ScormMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeMana
                     "Unsupported SCORM version. Only SCORM 1.2 and SCORM 2004 are supported.")
         }
     }
+
+private def getValidatedLaunchFile(extractionBasePath: String, launchFile: String): String = {
+    if (launchFile.isEmpty) {
+        throw new ClientException("ERR_INVALID_FILE", "Invalid launch file path!")
+    }
+
+    val delimiterIndex = launchFile.indexWhere(c => c == '?' || c == '#')
+    val cleanLaunchFile = if (delimiterIndex != -1) launchFile.substring(0, delimiterIndex) else launchFile
+
+    val basePath = Paths.get(extractionBasePath)
+    val launchPath = basePath.resolve(cleanLaunchFile).normalize()
+    
+    TelemetryManager.info(s"Validating launch file: basePath=$basePath, launchFile=$cleanLaunchFile, combinedPath=${launchPath.toAbsolutePath}")
+
+    if (!launchPath.startsWith(basePath)) {
+        TelemetryManager.error("ERR_INVALID_FILE:: Potential path traversal detected: " + cleanLaunchFile)
+        throw new ClientException("ERR_INVALID_FILE", "Invalid launch file path!")
+    }
+
+    if (!launchPath.toFile.exists() || launchPath.toFile.isDirectory) {
+        TelemetryManager.error("ERR_INVALID_FILE:: Launch file defined in imsmanifest.xml does not exist or is a directory: " + cleanLaunchFile)
+        throw new ClientException("ERR_INVALID_FILE", "The launch file '" + cleanLaunchFile + "' specified in imsmanifest.xml is missing or invalid!")
+    }
+
+    launchFile
+}
 
     private def getScoList(xml: Elem, scormVersion: String): List[Map[String, String]] = {
 
@@ -145,32 +157,6 @@ class ScormMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeMana
         }.toList
     }
 
-    private def getValidatedLaunchFile(extractionBasePath: String, launchFile: String): String = {
-        if (launchFile.isEmpty)
-            throw new ClientException("ERR_INVALID_FILE", "Invalid launch file path!")
-
-        val delimiterIndex = launchFile.indexWhere(c => c == '?' || c == '#')
-        val cleanLaunchFile = if (delimiterIndex != -1) launchFile.substring(0, delimiterIndex) else launchFile
-
-        val basePath   = Paths.get(extractionBasePath)
-        val launchPath = basePath.resolve(cleanLaunchFile).normalize()
-
-        TelemetryManager.info(s"Validating launch file: basePath=$basePath, launchFile=$cleanLaunchFile, resolvedPath=${launchPath.toAbsolutePath}")
-
-        if (!launchPath.startsWith(basePath)) {
-            TelemetryManager.error("ERR_INVALID_FILE:: Potential path traversal detected: " + cleanLaunchFile)
-            throw new ClientException("ERR_INVALID_FILE", "Invalid launch file path!")
-        }
-
-        if (!launchPath.toFile.exists() || launchPath.toFile.isDirectory) {
-            TelemetryManager.error("ERR_INVALID_FILE:: Launch file missing or is a directory: " + cleanLaunchFile)
-            throw new ClientException("ERR_INVALID_FILE",
-                s"The launch file '$cleanLaunchFile' specified in imsmanifest.xml is missing or invalid!")
-        }
-
-        launchFile
-    }
-
     private def getSecureXml(manifestFile: File): Elem = {
         val spf = SAXParserFactory.newInstance()
         spf.setNamespaceAware(true)
@@ -178,9 +164,24 @@ class ScormMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeMana
         spf.setFeature("http://xml.org/sax/features/external-parameter-entities", false)
         spf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
         spf.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
-
+        
         val saxParser = spf.newSAXParser()
         scala.xml.XML.withSAXParser(saxParser).loadFile(manifestFile)
     }
 
+    override def upload(objectId: String, node: Node, fileUrl: String, filePath: Option[String], params: UploadParams)(implicit ec: ExecutionContext): Future[Map[String, AnyRef]] = {
+        validateUploadRequest(objectId, node, fileUrl)
+        val file = copyURLToFile(objectId, fileUrl)
+        upload(objectId, node, file, filePath, params)
+    }
+
+    override def review(objectId: String, node: Node)(implicit ec: ExecutionContext, ontologyEngineContext: OntologyEngineContext): Future[Map[String, AnyRef]] = {
+        validate(node, "[SCORM file should be uploaded for further processing!]")
+        Future(getEnrichedMetadata(node.getMetadata.getOrDefault("status", "").asInstanceOf[String]))
+    }
+
+    override def publish(objectId: String, node: Node)(implicit ec: ExecutionContext, ontologyEngineContext: OntologyEngineContext): Future[Map[String, AnyRef]] = {
+        validate(node, "[SCORM file should be uploaded for further processing!]")
+        Future(getEnrichedPublishMetadata(node.getMetadata.getOrDefault("status", "").asInstanceOf[String]))
+    }
 }
