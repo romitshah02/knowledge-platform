@@ -17,71 +17,68 @@ import scala.xml.Elem
 class ScormMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeManager()(ss) with MimeTypeManager {
 
     override def upload(objectId: String, node: Node, uploadFile: File, filePath: Option[String], params: UploadParams)(implicit ec: ExecutionContext): Future[Map[String, AnyRef]] = {
-            validateUploadRequest(objectId, node, uploadFile)
-            TelemetryManager.info("SCORM content upload for objectId:: " + objectId)
-            val extractionBasePath = getBasePath(objectId)
-        try {
-            if (isValidPackageStructure(uploadFile, List("imsmanifest.xml"))) {
-                extractPackage(uploadFile, extractionBasePath)
-                val manifestFile = new File(extractionBasePath + File.separator + "imsmanifest.xml")
-                val manifestXml  = getSecureXml(manifestFile)
-                val scormVersion = detectScormVersion(manifestXml)
-                val scoList      = getScoList(manifestXml, scormVersion)
+                validateUploadRequest(objectId, node, uploadFile)
+                TelemetryManager.info("SCORM content upload for objectId:: " + objectId)
+                val extractionBasePath = getBasePath(objectId)
+                try {
+                    if (isValidPackageStructure(uploadFile, List("imsmanifest.xml"))) {
+                        extractPackage(uploadFile, extractionBasePath)
+                        val manifestFile = new File(extractionBasePath + File.separator + "imsmanifest.xml")
+                        val manifestXml  = getSecureXml(manifestFile)
+                        val scormVersion = detectScormVersion(manifestXml)
+                        val scoList      = getScoList(manifestXml, scormVersion)
 
-                if (scoList.isEmpty)
-                    throw new ClientException("ERR_INVALID_FILE", "No SCOs found in imsmanifest.xml!")
+                        if (scoList.isEmpty)
+                            throw new ClientException("ERR_INVALID_FILE", "No SCOs found in imsmanifest.xml!")
 
-                // Validate all SCO hrefs up-front
-                scoList.foreach(sco => getValidatedLaunchFile(extractionBasePath, sco.getOrElse("href", "")))
+                        // Validate all SCO hrefs up-front
+                        scoList.foreach(sco => getValidatedLaunchFile(extractionBasePath, sco.getOrElse("href", "")))
 
-                val launchFile = scoList.head.getOrElse("href", "")
+                        val launchFile = scoList.head.getOrElse("href", "")
 
-                val javaScoList = new util.ArrayList[util.Map[String, String]]()
-                scoList.foreach { sco =>
-                    val javaMap = new util.HashMap[String, String]()
-                    sco.foreach { case (k, v) => javaMap.put(k, v) }
-                    javaScoList.add(javaMap)
+                        val javaScoList = new util.ArrayList[util.Map[String, String]]()
+                        scoList.foreach { sco =>
+                                            val javaMap = new util.HashMap[String, String]()
+                                            sco.foreach { case (k, v) => javaMap.put(k, v) }
+                                            javaScoList.add(javaMap)
+                                        }
+
+                        val urls: Array[String] = uploadArtifactToCloud(uploadFile, objectId, filePath)
+                        extractPackageInCloud(objectId, uploadFile, node, "snapshot", false)
+
+                        Future(
+                            Map[String, AnyRef](
+                                "identifier"   -> objectId,
+                                "artifactUrl"  -> urls(IDX_S3_URL),
+                                "s3Key"        -> urls(IDX_S3_KEY),
+                                "size"         -> getFileSize(uploadFile).asInstanceOf[AnyRef],
+                                "launchFile"   -> launchFile,
+                                "scoList"      -> javaScoList,
+                                "scormVersion" -> scormVersion
+                            )
+                        )
+
+                    } else {
+                        TelemetryManager.error("ERR_INVALID_FILE:: Invalid SCORM package: imsmanifest.xml not found for objectId: " + objectId)
+                        throw new ClientException("ERR_INVALID_FILE", "Invalid SCORM package: imsmanifest.xml is missing!")
+                    }
+                } finally {
+                    delete(new File(extractionBasePath))
                 }
-
-                val urls: Array[String] = uploadArtifactToCloud(uploadFile, objectId, filePath)
-                extractPackageInCloud(objectId, uploadFile, node, "snapshot", false)
-
-                Future(
-                    Map[String, AnyRef](
-                        "identifier"   -> objectId,
-                        "artifactUrl"  -> urls(IDX_S3_URL),
-                        "s3Key"        -> urls(IDX_S3_KEY),
-                        "size"         -> getFileSize(uploadFile).asInstanceOf[AnyRef],
-                        "launchFile"   -> launchFile,
-                        "scoList"      -> javaScoList,
-                        "scormVersion" -> scormVersion
-                    )
-                )
-
-            } else {
-                TelemetryManager.error("ERR_INVALID_FILE:: Invalid SCORM package: imsmanifest.xml not found for objectId: " + objectId)
-                throw new ClientException("ERR_INVALID_FILE", "Invalid SCORM package: imsmanifest.xml is missing!")
-            }
-        } finally {
-            delete(new File(extractionBasePath))
-        }
     }
 
-    override def upload(objectId: String, node: Node, fileUrl: String, filePath: Option[String], params: UploadParams)
-                       (implicit ec: ExecutionContext): Future[Map[String, AnyRef]] = {
+    override def upload(objectId: String, node: Node, fileUrl: String, filePath: Option[String], params: UploadParams)(implicit ec: ExecutionContext): Future[Map[String, AnyRef]] = {
         validateUploadRequest(objectId, node, fileUrl)
         val file = copyURLToFile(objectId, fileUrl)
         upload(objectId, node, file, filePath, params)
     }
 
-    override def review(objectId: String, node: Node)
-                       (implicit ec: ExecutionContext, ontologyEngineContext: OntologyEngineContext): Future[Map[String, AnyRef]] = {
+    override def review(objectId: String, node: Node)(implicit ec: ExecutionContext, ontologyEngineContext: OntologyEngineContext): Future[Map[String, AnyRef]] = {
         validate(node, "[SCORM file should be uploaded for further processing!]")
         Future(getEnrichedMetadata(node.getMetadata.getOrDefault("status", "").asInstanceOf[String]))
     }
 
-    override def publish(objectId: String, node: Node)
-                        (implicit ec: ExecutionContext, ontologyEngineContext: OntologyEngineContext): Future[Map[String, AnyRef]] = {
+    override def publish(objectId: String, node: Node)(implicit ec: ExecutionContext, ontologyEngineContext: OntologyEngineContext): Future[Map[String, AnyRef]] = {
         validate(node, "[SCORM file should be uploaded for further processing!]")
         Future(getEnrichedPublishMetadata(node.getMetadata.getOrDefault("status", "").asInstanceOf[String]))
     }
