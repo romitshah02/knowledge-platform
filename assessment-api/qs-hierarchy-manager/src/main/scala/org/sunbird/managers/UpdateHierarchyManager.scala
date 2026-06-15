@@ -186,8 +186,6 @@ object UpdateHierarchyManager {
                     throw new ClientException("ERR_UPDATE_QS_HIERARCHY", s"Object Type is mandatory for node with identifier: ${child.get(HierarchyConstants.IDENTIFIER)}")
                 }
                 node.setObjectType(objectType)
-                // NodeUtil.deserialize does not set nodeType; VersionKeyValidator.isValidVersionkey NPEs on null nodeType
-                node.setNodeType(HierarchyConstants.DATA_NODE)
                 val updatedNodes = node :: nodes
                 Future(updatedNodes)
             }
@@ -245,8 +243,6 @@ object UpdateHierarchyManager {
         idMap += (nodeId -> identifier)
         metadata.put(HierarchyConstants.IDENTIFIER, identifier)
         metadata.put(HierarchyConstants.CODE, nodeId)
-        // Use passport key so VersionKeyValidator skips DB lookup for in-memory-only nodes (QuestionSet sections are never persisted to JanusGraph individually)
-        metadata.put(HierarchyConstants.VERSION_KEY, Platform.config.getString("graph.passport.key.base"))
         metadata.put(HierarchyConstants.CREATED_ON, DateUtils.formatCurrentDate)
         metadata.put(HierarchyConstants.LAST_STATUS_CHANGED_ON, DateUtils.formatCurrentDate)
         metadata.remove("schemaVersion")
@@ -314,9 +310,6 @@ object UpdateHierarchyManager {
         val nodesToValidate = nodeList.filter(node => (StringUtils.equals(HierarchyConstants.PARENT, node.getMetadata.get(HierarchyConstants.VISIBILITY).asInstanceOf[String])
             && !StringUtils.equalsIgnoreCase("Question", node.getObjectType))
             || StringUtils.equalsAnyIgnoreCase(rootId, node.getIdentifier)).toList
-        // sYS_INTERNAL_LAST_UPDATED_ON is a system property set by VersionKeyValidator during the passport-key fast-path.
-        // It is not declared in the questionset JSON schema, so it must be stripped before schema validation runs.
-        nodesToValidate.foreach(node => node.getMetadata.remove("sYS_INTERNAL_LAST_UPDATED_ON"))
         DefinitionNode.updateJsonPropsInNodes(nodeList.toList, HierarchyConstants.TAXONOMY_ID, HierarchyConstants.QUESTIONSET_SCHEMA_NAME, request.getContext.get("version").asInstanceOf[String])
         DefinitionNode.validateContentNodes(nodesToValidate, HierarchyConstants.TAXONOMY_ID, HierarchyConstants.QUESTIONSET_SCHEMA_NAME, request.getContext.get("version").asInstanceOf[String])
     }
