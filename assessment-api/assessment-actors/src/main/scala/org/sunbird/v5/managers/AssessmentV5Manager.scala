@@ -87,18 +87,46 @@ object AssessmentV5Manager {
   }
 
   private val systemDefaultLang: String = Platform.getString("platform.default.language", "en")
-  private val i18nTopLevelFields: Set[String] = Set("body", "instructions", "answer", "hints", "feedback", "solutions")
+  // Fields whose value is directly an i18n map: { "en": "...", "hi": "..." }
+  private val directI18nFields: Set[String] = Set("body", "instructions", "answer")
+  // Fields whose value is an id-keyed map of i18n values: { "<id>": "..." | { "en": "...", "hi": "..." } }
+  private val keyedI18nFields: Set[String] = Set("hints", "feedback", "solutions")
+
+  // Resolve an i18n value to the requested language, falling back to the system default.
+  // Returns null when there is nothing to resolve (plain single-language string or unrelated value),
+  // signalling the caller to leave the original value untouched.
+  private def resolveI18n(value: AnyRef, lang: String): AnyRef = value match {
+    case m: util.Map[_, _] =>
+      val i18n = m.asInstanceOf[util.Map[String, AnyRef]]
+      Option(i18n.get(lang)).orElse(Option(i18n.get(systemDefaultLang))).orNull
+    case s: String =>
+      // Defensive: the read path normally deserializes oneOf props to maps, but if that step
+      // was skipped/failed the value can arrive as a JSON-encoded i18n map string. Parse it so
+      // we never leak a raw i18n blob to the client; plain HTML strings won't parse and are left as-is.
+      Try(JsonUtils.deserialize(s, classOf[util.Map[String, AnyRef]])).toOption.flatMap { parsed =>
+        if (parsed != null && (parsed.containsKey(lang) || parsed.containsKey(systemDefaultLang)))
+          Option(parsed.get(lang)).orElse(Option(parsed.get(systemDefaultLang)))
+        else None
+      }.orNull
+    case _ => null
+  }
 
   private[managers] def filterByLanguage(metadata: util.Map[String, AnyRef], lang: String): Unit = {
-    i18nTopLevelFields.foreach { field =>
+    directI18nFields.foreach { field =>
       if (metadata.containsKey(field)) {
-        metadata.get(field) match {
-          case m: util.Map[_, _] =>
-            val i18n = m.asInstanceOf[util.Map[String, AnyRef]]
-            val v = Option(i18n.get(lang)).orElse(Option(i18n.get(systemDefaultLang))).orNull
-            if (v != null) metadata.put(field, v)
-          case _ =>
-        }
+        val resolved = resolveI18n(metadata.get(field), lang)
+        if (resolved != null) metadata.put(field, resolved)
+      }
+    }
+    keyedI18nFields.foreach { field =>
+      metadata.get(field) match {
+        case m: util.Map[_, _] =>
+          val keyed = m.asInstanceOf[util.Map[String, AnyRef]]
+          keyed.keySet().asScala.toList.foreach { id =>
+            val resolved = resolveI18n(keyed.get(id), lang)
+            if (resolved != null) keyed.put(id, resolved)
+          }
+        case _ =>
       }
     }
     if (metadata.containsKey("interactions")) {

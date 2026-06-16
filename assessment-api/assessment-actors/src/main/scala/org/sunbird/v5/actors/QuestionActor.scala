@@ -90,12 +90,13 @@ class QuestionActor @Inject()(implicit oec: OntologyEngineContext) extends Abstr
     val fields: util.List[String] = request.get("fields").asInstanceOf[String].split(",").filter(field => StringUtils.isNotBlank(field) && !StringUtils.equalsIgnoreCase(field, "null")).toList.asJava
     val extPropNameList:util.List[String] = DefinitionNode.getExternalProps(request.getContext.get("graph_id").asInstanceOf[String], request.getContext.get("version").asInstanceOf[String], request.getContext.get("schemaName").asInstanceOf[String]).asJava
     request.getRequest.put("fields", extPropNameList)
+    val lang = request.getRequest.getOrDefault("lang", "").asInstanceOf[String]
     if (StringUtils.isBlank(request.getRequest.getOrDefault("channel", "").asInstanceOf[String]))
       throw new ClientException(AssessmentErrorCodes.ERR_REQUEST_DATA_VALIDATION, "Please Provide Channel!")
     DataNode.read(request).map(node => {
       if (!StringUtils.equalsIgnoreCase(node.getMetadata.getOrDefault("channel", "").asInstanceOf[String], request.getRequest.getOrDefault("channel", "").asInstanceOf[String]))
         throw new ClientException(AssessmentErrorCodes.ERR_ACCESS_DENIED, "Channel Id Is Not Matched. Please Provide Valid Channel Id!")
-      ResponseHandler.OK.put("question", AssessmentV5Manager.getQuestionMetadata(node, fields, extPropNameList))
+      ResponseHandler.OK.put("question", AssessmentV5Manager.getQuestionMetadata(node, fields, extPropNameList, lang))
     })
   }
 
