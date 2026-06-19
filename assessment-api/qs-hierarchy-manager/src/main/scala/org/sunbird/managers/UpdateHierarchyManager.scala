@@ -243,6 +243,7 @@ object UpdateHierarchyManager {
         idMap += (nodeId -> identifier)
         metadata.put(HierarchyConstants.IDENTIFIER, identifier)
         metadata.put(HierarchyConstants.CODE, nodeId)
+        metadata.put(HierarchyConstants.VERSION_KEY, System.currentTimeMillis + "")
         metadata.put(HierarchyConstants.CREATED_ON, DateUtils.formatCurrentDate)
         metadata.put(HierarchyConstants.LAST_STATUS_CHANGED_ON, DateUtils.formatCurrentDate)
         metadata.remove("schemaVersion")

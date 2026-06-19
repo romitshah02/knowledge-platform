@@ -32,6 +32,13 @@ object AssessmentV5Manager {
   val skipValidation: Boolean = Platform.getBoolean("assessment.skip.validation", false)
   val validStatus = List("Draft", "Review")
 
+  // Derived from config — used to validate that a node meets the platform's minimum QuML version requirement.
+  val minSupportedVersion: Double = supportedVersions.asScala.map(_.doubleValue()).min
+
+  // Fixed format boundary in the QuML spec: 1.1 is when the interaction/responseDeclaration schema changed.
+  // Used only in data-migration transforms (1.0 → 1.1), NOT for platform version validation.
+  private val QUML_1_1_FORMAT_VERSION: Double = 1.1
+
   def validateAndGetVersion(ver: AnyRef): AnyRef = {
     if (supportedVersions.contains(ver)) ver else throw new ClientException(AssessmentErrorCodes.ERR_REQUEST_DATA_VALIDATION, s"Platform doesn't support quml version ${ver} | Currently Supported quml version are: ${supportedVersions}")
   }
@@ -328,8 +335,8 @@ object AssessmentV5Manager {
   def validateHierarchy(request: Request, children: util.List[util.Map[String, AnyRef]], rootUserId: String)(implicit ec: ExecutionContext, oec: OntologyEngineContext): Unit = {
     children.toList.foreach(content => {
       val version: Double = content.getOrDefault("qumlVersion", 1.0.asInstanceOf[AnyRef]).asInstanceOf[Double]
-      if (version < 1.1)
-        throw new ClientException(AssessmentErrorCodes.ERR_OBJECT_VALIDATION, s"Children Object with identifier ${content.get("identifier").toString} doesn't have data in QuML 1.1 format.")
+      if (version < minSupportedVersion)
+        throw new ClientException(AssessmentErrorCodes.ERR_OBJECT_VALIDATION, s"Children Object with identifier ${content.get("identifier").toString} doesn't have data in QuML $minSupportedVersion format.")
       if ((StringUtils.equalsAnyIgnoreCase(content.getOrDefault("visibility", "").asInstanceOf[String], "Default")
         && !StringUtils.equals(rootUserId, content.getOrDefault("createdBy", "").asInstanceOf[String]))
         && !StringUtils.equalsIgnoreCase(content.getOrDefault("status", "").asInstanceOf[String], "Live"))
@@ -405,8 +412,8 @@ object AssessmentV5Manager {
       if (StringUtils.equalsAnyIgnoreCase(node.getMetadata.getOrDefault("status", "").asInstanceOf[String], "Processing"))
         throw new ClientException(errCode, s"${node.getObjectType.replace("Image", "")} having Processing status can't be sent for publish.")
       val version: Double = node.getMetadata.getOrDefault("qumlVersion", 1.0.asInstanceOf[AnyRef]).asInstanceOf[Double]
-      if (version < 1.1)
-        throw new ClientException(errCode, s"${node.getObjectType().replace("Image", "")} can't be sent for publish as data is not in QuML 1.1 format.")
+      if (version < minSupportedVersion)
+        throw new ClientException(errCode, s"${node.getObjectType().replace("Image", "")} can't be sent for publish as data is not in QuML $minSupportedVersion format.")
       node
     })
   }
@@ -522,7 +529,7 @@ object AssessmentV5Manager {
 
   def processInteractions(data: util.Map[String, AnyRef]): Unit = {
     val version = Try(data.getOrDefault("qumlVersion", 1.0.asInstanceOf[AnyRef]).toString.toDouble).getOrElse(1.0)
-    if (version >= 1.1) return
+    if (version >= QUML_1_1_FORMAT_VERSION) return
     val interactions: util.Map[String, AnyRef] = data.getOrDefault("interactions", Map[String, AnyRef]().asJava).asInstanceOf[util.Map[String, AnyRef]]
     if (!interactions.isEmpty) {
       val validation = interactions.getOrElse("validation", new util.HashMap[String, AnyRef]()).asInstanceOf[util.Map[String, AnyRef]]
@@ -566,7 +573,7 @@ object AssessmentV5Manager {
           //remove outcome from correctResponse
           responseData.getOrDefault("correctResponse", Map[String, AnyRef]().asJava).asInstanceOf[util.Map[String, AnyRef]].remove("outcomes")
           // type cast value — v1.0 only: integer type with single cardinality stored value as string
-          if (version < 1.1) {
+          if (version < QUML_1_1_FORMAT_VERSION) {
             try {
               if (StringUtils.equalsIgnoreCase("integer", responseData.getOrDefault("type", "").asInstanceOf[String])
                 && StringUtils.equalsIgnoreCase("single", responseData.getOrDefault("cardinality", "").asInstanceOf[String])) {
@@ -580,7 +587,7 @@ object AssessmentV5Manager {
           }
           //update mapping — v1.0 only: mapping used {response, outcomes.score}; v1.1 uses {value, score} directly
           val mappingData = responseData.getOrElse("mapping", List[util.Map[String, AnyRef]]().asJava).asInstanceOf[util.List[util.Map[String, AnyRef]]]
-          if (version < 1.1 && !mappingData.isEmpty) {
+          if (version < QUML_1_1_FORMAT_VERSION && !mappingData.isEmpty) {
             val updatedMapping = mappingData.asScala.toList.map(mapData => {
               Map[String, AnyRef]("value" -> mapData.get("response"), "score" -> mapData.getOrDefault("outcomes", Map[String, AnyRef]().asJava).asInstanceOf[util.Map[String, AnyRef]].get("score")).asJava
             }).asJava
