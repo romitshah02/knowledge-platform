@@ -136,6 +136,42 @@ public class HtmlSanitizerTest {
     }
 
     @Test
+    public void testSanitizeRichTextAllowsImgWithHttpsSrc() {
+        String input = "<p>See</p><img src=\"https://cdn.example.com/diagram.png\" alt=\"Diagram\">";
+        String result = HtmlSanitizer.sanitizeRichText(input);
+        Assert.assertTrue("Should keep img tag", result.contains("<img"));
+        Assert.assertTrue("Should keep https src", result.contains("https://cdn.example.com/diagram.png"));
+        Assert.assertTrue("Should keep alt", result.contains("alt=\"Diagram\""));
+    }
+
+    @Test
+    public void testSanitizeRichTextAllowsImgWithBlobSrc() {
+        String input = "<img src=\"blob:https://example.com/9d4a-44e2\">";
+        String result = HtmlSanitizer.sanitizeRichText(input);
+        Assert.assertTrue("Should keep img tag", result.contains("<img"));
+        Assert.assertTrue("Should keep blob src", result.contains("blob:https://example.com/9d4a-44e2"));
+    }
+
+    @Test
+    public void testSanitizeRichTextKeepsImgButStripsOnerror() {
+        String input = "<img src=\"https://cdn.example.com/x.png\" onerror=\"steal(document.cookie)\">";
+        String result = HtmlSanitizer.sanitizeRichText(input);
+        Assert.assertTrue("Should keep img tag", result.contains("<img"));
+        Assert.assertTrue("Should keep src", result.contains("https://cdn.example.com/x.png"));
+        Assert.assertFalse("Should strip onerror handler", result.contains("onerror"));
+        Assert.assertFalse("Should strip handler body", result.contains("document.cookie"));
+    }
+
+    @Test
+    public void testSanitizeFieldBodyKeepsImageButStripsScript() {
+        String input = "<p>Question</p><img src=\"https://cdn.example.com/q1.png\"><script>evil()</script>";
+        String result = HtmlSanitizer.sanitizeField("body", input);
+        Assert.assertTrue(result.contains("<img"));
+        Assert.assertTrue(result.contains("https://cdn.example.com/q1.png"));
+        Assert.assertFalse(result.contains("<script>"));
+    }
+
+    @Test
     public void testSanitizeRichTextAllowsMathTags() {
         String input = "<math><mrow><mi>x</mi><mo>+</mo><mn>1</mn></mrow></math>";
         String result = HtmlSanitizer.sanitizeRichText(input);
