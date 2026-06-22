@@ -28,7 +28,7 @@ public class HtmlSanitizer {
             .allowAttributes("class", "style", "dir", "lang").globally()
             .allowAttributes("colspan", "rowspan").onElements("td", "th")
             .allowAttributes("mathvariant").onElements("mi")
-            .allowAttributes("src", "alt", "title", "width", "height").onElements("img")
+            .allowAttributes("src", "alt", "title", "width", "height", "data-asset-variable").onElements("img")
             .allowUrlProtocols("http", "https", "data", "blob")
             .allowStyling()
             .toFactory();

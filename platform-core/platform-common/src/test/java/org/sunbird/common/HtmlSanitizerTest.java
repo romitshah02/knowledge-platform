@@ -172,6 +172,20 @@ public class HtmlSanitizerTest {
     }
 
     @Test
+    public void testSanitizeRichTextKeepsFigureImgWithAssetVariable() {
+        String input = "<figure class=\"image\"><img " +
+                "src=\"https://edtestingda72f12a.blob.core.windows.net/x/chemistry.jpeg\" " +
+                "alt=\"chemistry\" data-asset-variable=\"do_2145524591929589761177\"></figure>";
+        String result = HtmlSanitizer.sanitizeField("question", input);
+        Assert.assertTrue("Should keep figure", result.contains("<figure"));
+        Assert.assertTrue("Should keep img", result.contains("<img"));
+        Assert.assertTrue("Should keep blob/external src",
+                result.contains("https://edtestingda72f12a.blob.core.windows.net/x/chemistry.jpeg"));
+        Assert.assertTrue("Should keep data-asset-variable for editor re-link",
+                result.contains("data-asset-variable=\"do_2145524591929589761177\""));
+    }
+
+    @Test
     public void testSanitizeRichTextAllowsMathTags() {
         String input = "<math><mrow><mi>x</mi><mo>+</mo><mn>1</mn></mrow></math>";
         String result = HtmlSanitizer.sanitizeRichText(input);
