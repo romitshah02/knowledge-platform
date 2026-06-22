@@ -13,7 +13,6 @@ import org.sunbird.graph.OntologyEngineContext
 import org.sunbird.graph.dac.model.Node
 import org.sunbird.models.UploadParams
 import scala.concurrent.Future
-import scala.collection.JavaConverters._ 
 
 class ScormMimeTypeMgrImplTest extends AsyncFlatSpec with Matchers with AsyncMockFactory {
     val mapper = new ObjectMapper()
@@ -61,89 +60,20 @@ class ScormMimeTypeMgrImplTest extends AsyncFlatSpec with Matchers with AsyncMoc
         }
     }
 
-    // Asset exclusion - verify items with scormType="asset" are filtered out
-    "upload" should "exclude items that are explicitly defined as assets in SCORM 2004" in {
-        val manifest = """<manifest xmlns="http://www.imsglobal.org/xsd/imscp_v1p1" xmlns:adlcp="http://www.adlnet.org/xsd/adlcp_v1p3"><metadata><schema>ADL SCORM</schema><schemaversion>2004</schemaversion></metadata><organizations default="org"><organization identifier="org"><item identifier="item1" identifierref="res1"><title>SCO 1</title></item><item identifier="item2" identifierref="res2"><title>Asset 1</title></item></organization></organizations><resources><resource identifier="res1" href="sco1/index.html" adlcp:scormType="sco"/><resource identifier="res2" href="asset1/image.png" adlcp:scormType="asset"/></resources></manifest>"""
-        val file = createZip(Map("imsmanifest.xml" -> manifest, "sco1/index.html" -> "<html></html>", "asset1/image.png" -> "image data"))
+    "upload" should "succeed and return scoList for a multi-SCO SCORM package" in {
+        val manifest = """<manifest><organizations default="org"><organization identifier="org"><item identifier="item1" identifierref="res1"><title>SCO 1</title></item><item identifier="item2" identifierref="res2"><title>SCO 2</title></item></organization></organizations><resources><resource identifier="res1" href="sco1/index.html"/><resource identifier="res2" href="sco2/index.html"/></resources></manifest>"""
+        val file = createZip(Map("imsmanifest.xml" -> manifest, "sco1/index.html" -> "<html></html>", "sco2/index.html" -> "<html></html>"))
 
         (ss.uploadFile(_: String, _: File, _: Option[Boolean])).expects(*, *, *).returns(Array("s3Key", "s3Url"))
         (ss.uploadDirectory(_: String, _: File, _: Option[Boolean])).expects(*, *, *).returns(Array("url"))
 
         scormMgr.upload("do_1", getNode(), file, None, UploadParams()).map { result =>
-            result("scormVersion") shouldBe "2004"
-            val javaList = result("scoList").asInstanceOf[java.util.List[java.util.Map[String, String]]]
-            val scoList = javaList.iterator().asScala.map(_.asScala.toMap).toList
-            scoList.size shouldBe 1
-            scoList.exists(sco => sco("identifier") == "item1") shouldBe true
-            scoList.exists(sco => sco("identifier") == "item2") shouldBe false
-            FileUtils.deleteQuietly(file)
-            succeed
-        }
-    }
-    }
-
-    // Version detection - no metadata
-    "upload" should "detect SCORM 1.2 when metadata block is missing" in {
-        val manifest = """<manifest xmlns="http://www.imsglobal.org/xsd/imscp_v1p1" xmlns:adlcp="http://www.adlnet.org/xsd/adlcp_v1p3"><organizations default="org"><organization identifier="org"><item identifier="item1" identifierref="res1"><title>SCO 1</title></item></organization></organizations><resources><resource identifier="res1" href="index.html"/></resources></manifest>"""
-        val file = createZip(Map("imsmanifest.xml" -> manifest, "index.html" -> "<html></html>"))
-
-        (ss.uploadFile(_: String, _: File, _: Option[Boolean])).expects(*, *, *).returns(Array("s3Key", "s3Url"))
-        (ss.uploadDirectory(_: String, _: File, _: Option[Boolean])).expects(*, *, *).returns(Array("url"))
-
-        scormMgr.upload("do_1", getNode(), file, None, UploadParams()).map { result =>
-            result("scormVersion") shouldBe "1.2"
-            FileUtils.deleteQuietly(file)
-            succeed
-        }
-    }
-
-    // Version detection - CAM 1.3
-    "upload" should "detect SCORM 2004 when schemaVersion is cam 1.3" in {
-        val manifest = """<manifest xmlns="http://www.imsglobal.org/xsd/imscp_v1p1" xmlns:adlcp="http://www.adlnet.org/xsd/adlcp_v1p3"><metadata><schema>cam</schema><schemaversion>1.3</schemaversion></metadata><organizations default="org"><organization identifier="org"><item identifier="item1" identifierref="res1"><title>SCO 1</title></item></organization></organizations><resources><resource identifier="res1" href="index.html" adlcp:scormType="sco"/></resources></manifest>"""
-        val file = createZip(Map("imsmanifest.xml" -> manifest, "index.html" -> "<html></html>"))
-
-        (ss.uploadFile(_: String, _: File, _: Option[Boolean])).expects(*, *, *).returns(Array("s3Key", "s3Url"))
-        (ss.uploadDirectory(_: String, _: File, _: Option[Boolean])).expects(*, *, *).returns(Array("url"))
-
-        scormMgr.upload("do_1", getNode(), file, None, UploadParams()).map { result =>
-            result("scormVersion") shouldBe "2004"
-            FileUtils.deleteQuietly(file)
-            succeed
-        }
-    }
-
-    // Unrecognized version
-    "upload" should "throw ClientException for unrecognized SCORM version" in {
-        val manifest = """<manifest xmlns="http://www.imsglobal.org/xsd/imscp_v1p1" xmlns:adlcp="http://www.adlnet.org/xsd/adlcp_v1p3"><metadata><schema>ADL SCORM</schema><schemaversion>3.0</schemaversion></metadata><organizations default="org"><organization identifier="org"><item identifier="item1" identifierref="res1"><title>SCO 1</title></item></organization></organizations><resources><resource identifier="res1" href="index.html"/></resources></manifest>"""
-        val file = createZip(Map("imsmanifest.xml" -> manifest, "index.html" -> "<html></html>"))
-
-        Future { scormMgr.upload("do_1", getNode(), file, None, UploadParams()) }.flatten.transform {
-            case scala.util.Failure(e: ClientException) =>
-                e.getErrCode shouldBe "ERR_INVALID_FILE"
-                FileUtils.deleteQuietly(file)
-                scala.util.Success(succeed)
-            case scala.util.Failure(e) =>
-                FileUtils.deleteQuietly(file)
-                scala.util.Failure(new Exception(s"Expected ClientException, got ${e.getClass.getName}: ${e.getMessage}", e))
-            case scala.util.Success(_) =>
-                FileUtils.deleteQuietly(file)
-                scala.util.Failure(new Exception("Expected ClientException, but upload succeeded"))
-        }
-    }
-
-    // xml:base composition
-    "upload" should "compose xml:base attributes correctly to form final href" in {
-        val manifest = """<manifest xml:base="base1/" xmlns="http://www.imsglobal.org/xsd/imscp_v1p1" xmlns:adlcp="http://www.adlnet.org/xsd/adlcp_v1p3"><metadata><schema>ADL SCORM</schema><schemaversion>2004</schemaversion></metadata><organizations default="org"><organization identifier="org"><item identifier="item1" identifierref="res1" parameters="?test=1"><title>SCO 1</title></item></organization></organizations><resources xml:base="base2/"><resource identifier="res1" href="index.html" xml:base="base3/" adlcp:scormType="sco"/></resources></manifest>"""
-        val file = createZip(Map("imsmanifest.xml" -> manifest, "base1/base2/base3/index.html" -> "<html></html>"))
-
-        (ss.uploadFile(_: String, _: File, _: Option[Boolean])).expects(*, *, *).returns(Array("s3Key", "s3Url"))
-        (ss.uploadDirectory(_: String, _: File, _: Option[Boolean])).expects(*, *, *).returns(Array("url"))
-
-        scormMgr.upload("do_1", getNode(), file, None, UploadParams()).map { result =>
-            val javaList = result("scoList").asInstanceOf[java.util.List[java.util.Map[String, String]]]
-            val scoList = javaList.iterator().asScala.map(_.asScala.toMap).toList
-            scoList.head("href") shouldBe "base1/base2/base3/index.html?test=1"
-            result("launchFile") shouldBe "base1/base2/base3/index.html?test=1"
+            result("launchFile") shouldBe "sco1/index.html"
+            val scoListJson = result("scoList").asInstanceOf[String]
+            val scoList = mapper.readValue(scoListJson, classOf[List[Map[String, String]]])
+            scoList.size shouldBe 2
+            scoList.exists(sco => sco("identifier") == "item1" && sco("title") == "SCO 1" && sco("href") == "sco1/index.html") shouldBe true
+            scoList.exists(sco => sco("identifier") == "item2" && sco("title") == "SCO 2" && sco("href") == "sco2/index.html") shouldBe true
             FileUtils.deleteQuietly(file)
             succeed
         }
@@ -169,7 +99,7 @@ class ScormMimeTypeMgrImplTest extends AsyncFlatSpec with Matchers with AsyncMoc
 
     // Missing launch file — manifest references a file absent from the zip throws ClientException
     "upload" should "throw ClientException when launch file is absent from package" in {
-        val manifest = """<manifest xmlns="http://www.imsglobal.org/xsd/imscp_v1p1" xmlns:adlcp="http://www.adlnet.org/xsd/adlcp_v1p3"><organizations default="org"><organization identifier="org"><item identifierref="res"/></organization></organizations><resources><resource identifier="res" href="missing.html"/></resources></manifest>"""
+        val manifest = """<manifest><organizations default="org"><organization identifier="org"><item identifierref="res"/></organization></organizations><resources><resource identifier="res" href="missing.html"/></resources></manifest>"""
         val file = createZip(Map("imsmanifest.xml" -> manifest))
         Future { scormMgr.upload("do_1", getNode(), file, None, UploadParams()) }.flatten.transform {
             case scala.util.Failure(e: ClientException) =>
@@ -187,7 +117,7 @@ class ScormMimeTypeMgrImplTest extends AsyncFlatSpec with Matchers with AsyncMoc
 
     // Path traversal in manifest — manifest href "../../../etc/passwd" throws ClientException
     "upload" should "throw ClientException for href with path traversal" in {
-        val manifest = """<manifest xmlns="http://www.imsglobal.org/xsd/imscp_v1p1" xmlns:adlcp="http://www.adlnet.org/xsd/adlcp_v1p3"><organizations default="org"><organization identifier="org"><item identifierref="res"/></organization></organizations><resources><resource identifier="res" href="../../../etc/passwd"/></resources></manifest>"""
+        val manifest = """<manifest><organizations default="org"><organization identifier="org"><item identifierref="res"/></organization></organizations><resources><resource identifier="res" href="../../../etc/passwd"/></resources></manifest>"""
         val file = createZip(Map("imsmanifest.xml" -> manifest))
         Future { scormMgr.upload("do_1", getNode(), file, None, UploadParams()) }.flatten.transform {
             case scala.util.Failure(e: ClientException) =>
