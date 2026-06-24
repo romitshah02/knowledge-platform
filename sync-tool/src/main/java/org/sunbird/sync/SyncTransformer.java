@@ -11,9 +11,6 @@ import java.util.Map;
 
 /**
  * Transforms JanusGraph vertex properties into OpenSearch index documents.
- * Mirrors the behaviour of Flink's CompositeSearchIndexerHelper.buildCompositeIndexerFromGraph()
- * followed by getIndexDocument() and addMetadataToDocument().
- *
  * Transformation rules (same as Flink graph-read path):
  *  1. stringOnlyFields: if value is List/Map, re-serialize to JSON string.
  *  2. All other String values starting with { or [: deserialize to Map/List.
@@ -89,8 +86,6 @@ public class SyncTransformer {
     }
 
     /**
-     * Mirrors buildCompositeIndexerFromGraph (lines 268-280 of CompositeSearchIndexerHelper):
-     *
      *  - stringOnlyFields + value is List/Map → serialize to JSON string
      *  - non-stringOnlyField + value is String starting with { or [ → deserialize to object
      *  - everything else → pass through
