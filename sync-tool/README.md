@@ -1,6 +1,6 @@
 # Sync Tool
 
-Bulk sync tool for populating OpenSearch from JanusGraph. Runs as a K8s Job.
+Bulk sync tool for populating OpenSearch from JanusGraph.
 
 ## When to use
 
@@ -46,17 +46,6 @@ java -jar sync-tool/target/sync-tool-1.0-SNAPSHOT.jar --objectType Content
 ```bash
 docker build -t sync-tool sync-tool/
 docker run sync-tool --objectType Content
-```
-
-## K8s Job (via install.sh)
-
-```bash
-./install.sh sync_objecttype Content
-./install.sh sync_identifiers do_123,do_456
-./install.sh sync_days 5
-./install.sh sync_file /path/to/node_identifiers.csv
-./install.sh sync_full
-./install.sh sync_deploy    # uses defaults from values.yaml
 ```
 
 ## Output
