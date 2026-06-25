@@ -33,6 +33,7 @@
 				<module>taxonomy-api</module>
 				<module>platform-modules</module>
 				<module>search-api</module>
+				<module>sync-tool</module>
 			</modules>
 		</profile>
 		<profile>
