@@ -24,11 +24,14 @@ public class HtmlSanitizer {
                     "h1", "h2", "h3", "h4", "h5", "h6", "span", "div", "table", "thead",
                     "tbody", "tr", "td", "th", "blockquote", "pre", "code", "sub", "sup",
                     "figure", "figcaption", "math", "mrow", "mi", "mo", "mn", "msup",
-                    "msub", "mfrac", "msqrt", "mover", "munder", "img")
+                    "msub", "mfrac", "msqrt", "mover", "munder", "img", "video", "audio", "source")
             .allowAttributes("class", "style", "dir", "lang").globally()
             .allowAttributes("colspan", "rowspan").onElements("td", "th")
             .allowAttributes("mathvariant").onElements("mi")
             .allowAttributes("src", "alt", "title", "width", "height", "data-asset-variable").onElements("img")
+            .allowAttributes("src", "width", "height", "controls", "poster", "autoplay", "loop", "muted", "preload", "data-asset-variable").onElements("video")
+            .allowAttributes("src", "width", "controls", "autoplay", "loop", "muted", "preload", "data-asset-variable").onElements("audio")
+            .allowAttributes("src", "type").onElements("source")
             .allowUrlProtocols("http", "https", "data", "blob")
             .allowStyling()
             .toFactory();

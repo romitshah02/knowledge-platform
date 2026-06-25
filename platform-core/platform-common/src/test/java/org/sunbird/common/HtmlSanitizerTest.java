@@ -186,6 +186,74 @@ public class HtmlSanitizerTest {
     }
 
     @Test
+    public void testSanitizeRichTextAllowsVideoWithSource() {
+        String input = "<video data-asset-variable=\"do_214601143504281600153\" width=\"400\" controls=\"\" poster=\"\">" +
+                "<source type=\"video/mp4\" src=\"https://eddevda72f12a.blob.core.windows.net/x/bunny.webm\">" +
+                "<source type=\"video/webm\" src=\"https://eddevda72f12a.blob.core.windows.net/x/bunny.webm\"></video>";
+        String result = HtmlSanitizer.sanitizeField("solutions", input);
+        Assert.assertTrue("Should keep video tag", result.contains("<video"));
+        Assert.assertTrue("Should keep source tag", result.contains("<source"));
+        Assert.assertTrue("Should keep source src", result.contains("https://eddevda72f12a.blob.core.windows.net/x/bunny.webm"));
+        Assert.assertTrue("Should keep source type", result.contains("video/mp4"));
+        Assert.assertTrue("Should keep data-asset-variable", result.contains("data-asset-variable=\"do_214601143504281600153\""));
+    }
+
+    @Test
+    public void testSanitizeRichTextAllowsAudioWithSource() {
+        String input = "<audio data-asset-variable=\"do_21460131755661721611\" width=\"400\" controls=\"\" poster=\"\">" +
+                "<source type=\"audio/mp3\" src=\"https://eddevda72f12a.blob.core.windows.net/x/file.mp3\">" +
+                "<source type=\"audio/wav\" src=\"https://eddevda72f12a.blob.core.windows.net/x/file.mp3\"></audio>";
+        String result = HtmlSanitizer.sanitizeField("solutions", input);
+        Assert.assertTrue("Should keep audio tag", result.contains("<audio"));
+        Assert.assertTrue("Should keep source tag", result.contains("<source"));
+        Assert.assertTrue("Should keep source src", result.contains("https://eddevda72f12a.blob.core.windows.net/x/file.mp3"));
+        Assert.assertTrue("Should keep source type", result.contains("audio/mp3"));
+        Assert.assertTrue("Should keep data-asset-variable", result.contains("data-asset-variable=\"do_21460131755661721611\""));
+    }
+
+    @Test
+    public void testSanitizeMapKeepsI18nMediaSolutions() {
+        // Reproduces the reported bug: i18n solutions map { "<id>": { en: img, ar: video, fr: audio, pt: img } }
+        Map<String, Object> langMap = new HashMap<>();
+        langMap.put("en", "<figure class=\"image\"><img src=\"https://blob.example.com/algebra.jpeg\" data-asset-variable=\"do_1\"></figure>");
+        langMap.put("ar", "<video data-asset-variable=\"do_2\" controls=\"\"><source type=\"video/mp4\" src=\"https://blob.example.com/bunny.webm\"></video>");
+        langMap.put("fr", "<audio data-asset-variable=\"do_3\" controls=\"\"><source type=\"audio/mp3\" src=\"https://blob.example.com/file.mp3\"></audio>");
+        langMap.put("pt", "<figure class=\"image\"><img src=\"https://blob.example.com/agile.jpeg\" data-asset-variable=\"do_4\"></figure>");
+        Map<String, Object> solutions = new HashMap<>();
+        solutions.put("253ff36b-2daa-49ab-9f3f-7117a3d961d2", langMap);
+        Map<String, Object> data = new HashMap<>();
+        data.put("solutions", solutions);
+
+        HtmlSanitizer.sanitizeMap(data);
+
+        Map<String, Object> outSolutions = (Map<String, Object>) data.get("solutions");
+        Map<String, Object> outLang = (Map<String, Object>) outSolutions.get("253ff36b-2daa-49ab-9f3f-7117a3d961d2");
+        Assert.assertTrue("en image must survive", ((String) outLang.get("en")).contains("<img"));
+        Assert.assertTrue("ar video must survive (was emptied before fix)", ((String) outLang.get("ar")).contains("<video"));
+        Assert.assertTrue("ar source src must survive", ((String) outLang.get("ar")).contains("https://blob.example.com/bunny.webm"));
+        Assert.assertTrue("fr audio must survive (was emptied before fix)", ((String) outLang.get("fr")).contains("<audio"));
+        Assert.assertTrue("fr source src must survive", ((String) outLang.get("fr")).contains("https://blob.example.com/file.mp3"));
+        Assert.assertTrue("pt image must survive", ((String) outLang.get("pt")).contains("<img"));
+    }
+
+    @Test
+    public void testSanitizeRichTextKeepsVideoButStripsOnerror() {
+        // Broadened media policy must NOT allow event handlers
+        String input = "<video src=\"https://blob.example.com/x.mp4\" onerror=\"steal(document.cookie)\" controls=\"\"></video>";
+        String result = HtmlSanitizer.sanitizeField("solutions", input);
+        Assert.assertTrue("Should keep video tag", result.contains("<video"));
+        Assert.assertFalse("Should strip onerror handler", result.contains("onerror"));
+        Assert.assertFalse("Should strip handler body", result.contains("document.cookie"));
+    }
+
+    @Test
+    public void testSanitizeRichTextStripsJavascriptSrcOnSource() {
+        String input = "<video controls=\"\"><source type=\"video/mp4\" src=\"javascript:alert(1)\"></video>";
+        String result = HtmlSanitizer.sanitizeField("solutions", input);
+        Assert.assertFalse("Should strip javascript: protocol src", result.contains("javascript:"));
+    }
+
+    @Test
     public void testSanitizeMapKeepsMtfImageLabelsInEditorState() {
         // MTF labels are localized maps: editorState.pairs[].left.en / right.en
         String img = "<figure class=\"image\"><img src=\"https://blob.example.com/algebra.jpeg\" " +
