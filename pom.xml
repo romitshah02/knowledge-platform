@@ -139,12 +139,6 @@
 				<artifactId>nimbus-jose-jwt</artifactId>
 				<version>9.37.4</version>
 			</dependency>
-			<!-- Security: azure-identity CVE-2024-35255 -->
-			<dependency>
-				<groupId>com.azure</groupId>
-				<artifactId>azure-identity</artifactId>
-				<version>1.13.3</version>
-			</dependency>
 			<!-- Security: jose4j CVE-2024-29371, CVE-2023-31582, CVE-2023-51775 -->
 			<dependency>
 				<groupId>org.bitbucket.b_c</groupId>
