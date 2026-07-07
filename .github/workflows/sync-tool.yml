@@ -1,6 +1,5 @@
-name: Build and Push Content Service Image
+name: Build and Push Sync Tool Image
 
-# GITHUB_TOKEN needs packages: write to push to ghcr.io (GitHub Container Registry)
 permissions:
   contents: read
   packages: write
@@ -22,34 +21,27 @@ jobs:
       - name: Check if build is enabled
         id: check
         env:
-          BUILD_ENABLED_VAR: ${{ vars.CONTENT_SERVICE_BUILD_ENABLED }}
+          BUILD_ENABLED_VAR: ${{ vars.SYNC_TOOL_BUILD_ENABLED }}
         run: |
           if [ -n "$BUILD_ENABLED_VAR" ]; then
             ENABLED="$BUILD_ENABLED_VAR"
-            echo "Taking value from CONTENT_SERVICE_BUILD_ENABLED: $ENABLED"
+            echo "Taking value from SYNC_TOOL_BUILD_ENABLED: $ENABLED"
           else
-            ENABLED=$(cat .github/build-config.json | jq -r '.services.content_service')
+            ENABLED=$(cat .github/build-config.json | jq -r '.services.sync_tool')
             echo "Taking value from build-config.json: $ENABLED"
           fi
           echo "enabled=$ENABLED" >> $GITHUB_OUTPUT
-          echo "Content Service build enabled: $ENABLED"
+          echo "Sync Tool build enabled: $ENABLED"
 
   build-and-push:
     needs: check-config
     if: needs.check-config.outputs.should_build == 'true'
     runs-on: ubuntu-latest
 
-    # CSP (cloud service provider) selects the Maven profile and Docker build-arg.
-    # Set the repository/environment variable CSP to azure | aws | gcp | oci. Defaults to azure.
-    env:
-      CSP: ${{ vars.CSP || 'azure' }}
-
     steps:
-      # Step 1: Checkout the code
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Step 2: Set up JDK 11 and Maven
       - name: Set up JDK 11 and Maven
         uses: actions/setup-java@v3
         with:
@@ -57,7 +49,6 @@ jobs:
           java-version: '11'
           cache: 'maven'
 
-      # Step 3: Set up Login to Docker registry
       - name: Registry Login
         uses: ./.github/actions/registry-login
         with:
@@ -69,29 +60,19 @@ jobs:
           registry_password: ${{ secrets.REGISTRY_PASSWORD }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
-      # Step 4: Build the project
-      - name: Build Content Service
+      - name: Build Sync Tool
         run: |
-          echo "Building with CSP profile: $CSP"
-          mvn clean install -DskipTests=true -P${CSP}
+          mvn clean package -pl sync-tool -am -DskipTests=true
 
-      # Step 5: Package the project
-      - name: Package Content Service
-        run: |
-          cd content-api
-          mvn play2:dist -pl content-service -P${CSP}
-
-      # Step 6: Build Docker image
       - name: Build Docker Image
         run: |
-          IMAGE_NAME="content-service"
+          IMAGE_NAME="sync-tool"
           IMAGE_TAG=$(echo "${{ github.ref_name }}_$(echo $GITHUB_SHA | cut -c1-7)" | tr '[:upper:]' '[:lower:]')
-          docker build --build-arg CSP=${CSP} -f build/content-service/Dockerfile -t $REGISTRY_URL/${IMAGE_NAME}:${IMAGE_TAG} .
+          docker build -f sync-tool/Dockerfile -t $REGISTRY_URL/${IMAGE_NAME}:${IMAGE_TAG} sync-tool/
 
           echo "IMAGE_NAME=${IMAGE_NAME}" >> $GITHUB_ENV
           echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_ENV
 
-      # Step 7: Push Docker Image
       - name: Push Docker Image
         run: |
           docker push $REGISTRY_URL/${IMAGE_NAME}:${IMAGE_TAG}
