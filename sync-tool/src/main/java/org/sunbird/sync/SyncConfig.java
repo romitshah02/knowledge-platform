@@ -16,6 +16,9 @@ public class SyncConfig {
     public final String graphId;
     public final String indexName;
     public final String esConnInfo;
+    public final String relativePathPrefix;
+    public final String absolutePath;
+    public final List<String> cspMetaFields;
 
     public SyncConfig() {
         this.batchSize = Platform.getInteger("sync.batchSize", 200);
@@ -27,6 +30,11 @@ public class SyncConfig {
         this.graphId = Platform.getString("graph.graphId", "domain");
         this.indexName = Platform.getString("compositesearch.index.name", "compositesearch");
         this.esConnInfo = Platform.getString("search.es_conn_info", "localhost:9200");
+        this.relativePathPrefix = Platform.getString("cloudstorage.relative_path_prefix", "CONTENT_STORAGE_BASE_PATH");
+        String readBasePath = Platform.getString("cloudstorage.read_base_path", "");
+        String container = Platform.getString("cloud_storage_container", "");
+        this.absolutePath = readBasePath + (readBasePath.isEmpty() || container.isEmpty() ? "" : "/") + container;
+        this.cspMetaFields = Platform.getStringList("cloudstorage.metadata.list", Arrays.asList());
     }
 
     /** Test-friendly constructor */
@@ -43,5 +51,8 @@ public class SyncConfig {
         this.graphId = graphId;
         this.indexName = indexName;
         this.esConnInfo = esConnInfo;
+        this.relativePathPrefix = "CONTENT_STORAGE_BASE_PATH";
+        this.absolutePath = "";
+        this.cspMetaFields = Arrays.asList();
     }
 }

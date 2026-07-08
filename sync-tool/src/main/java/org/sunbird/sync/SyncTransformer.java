@@ -79,6 +79,9 @@ public class SyncTransformer {
         // Add system fields
         addSystemFields(document, vertexProps);
 
+        // Replace CONTENT_STORAGE_BASE_PATH with absolute cloud URL
+        replaceRelativePaths(document);
+
         // Truncate long strings
         truncateStrings(document);
 
@@ -149,6 +152,18 @@ public class SyncTransformer {
             String id = (String) vertexProps.get("IL_UNIQUE_ID");
             if (id != null) {
                 document.put("identifier", id);
+            }
+        }
+    }
+
+    private void replaceRelativePaths(Map<String, Object> document) {
+        if (config.cspMetaFields.isEmpty() || config.absolutePath.isEmpty()) {
+            return;
+        }
+        for (String field : config.cspMetaFields) {
+            Object value = document.get(field);
+            if (value instanceof String) {
+                document.put(field, ((String) value).replace(config.relativePathPrefix, config.absolutePath));
             }
         }
     }
