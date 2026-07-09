@@ -45,7 +45,7 @@
     "targetTopicIds"
   ],
   "cacheEnabled": false,
-  "schema_restrict_api": true,
+  "schema_restrict_api": false,
   "restrictProps": {
     "create": [
       "children",
