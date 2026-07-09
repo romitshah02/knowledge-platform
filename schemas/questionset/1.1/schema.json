@@ -177,6 +177,10 @@
     "pkgVersion": {
       "type": "number"
     },
+    "version": {
+      "type": "number",
+      "default": 1
+    },
     "versionKey": {
       "type": "string"
     },
@@ -450,7 +454,10 @@
       "type": "string",
       "enum": [
         "system",
-        "none"
+        "none",
+        "responseProcessing",
+        "offline",
+        "external"
       ]
     },
     "qumlVersion": {

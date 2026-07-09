@@ -67,6 +67,13 @@ public class StorageModule extends AbstractModule {
 
         StorageConfig.Builder builder = StorageConfig.builder(storageTypeEnum).authType(authType);
 
+        // Region: required for non-us-east-1 buckets (e.g. AWS S3). When set, the SDK uses it
+        // explicitly; when empty, the CSP falls back to its default (AWS -> us-east-1).
+        String region = getConfigOrEnv("cloud_storage_region", "");
+        if (!region.isEmpty()) {
+            builder.region(region);
+        }
+
         // The 'storageKey' (Azure Account Name) is required even for OIDC
         // to construct the correct service URL (e.g. https://<account_name>.blob.core.windows.net)
         String storageKey = getConfigOrEnv("cloud_storage_key", "");

@@ -30,7 +30,7 @@
   "orgFrameworkTerms": ["boardIds", "gradeLevelIds", "subjectIds", "mediumIds", "topicsIds"],
   "targetFrameworkTerms": ["targetFWIds", "targetBoardIds", "targetGradeLevelIds", "targetSubjectIds", "targetMediumIds", "targetTopicIds"],
   "cacheEnabled": false,
-  "schema_restrict_api": true,
+  "schema_restrict_api": false,
   "oneOfProps": ["body","answer","instructions"],
   "external": {
     "tableName": "question_data",
@@ -66,6 +66,9 @@
         "type": "string"
       },
       "feedback": {
+        "type": "string"
+      },
+      "pairs": {
         "type": "string"
       }
     },

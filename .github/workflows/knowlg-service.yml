@@ -39,6 +39,11 @@ jobs:
     if: needs.check-config.outputs.should_build == 'true'
     runs-on: ubuntu-latest
 
+    # CSP (cloud service provider) selects the Maven profile and Docker build-arg.
+    # Set the repository/environment variable CSP to azure | aws | gcp | oci. Defaults to azure.
+    env:
+      CSP: ${{ vars.CSP || 'azure' }}
+
     steps:
       # Step 1: Checkout the code
       - name: Checkout code
@@ -67,19 +72,20 @@ jobs:
       # Step 4: Build the project
       - name: Build Knowlg Service
         run: |
-          mvn clean install -DskipTests=true
+          echo "Building with CSP profile: $CSP"
+          mvn clean install -DskipTests=true -P${CSP}
 
       # Step 5: Package the project
       - name: Package Knowlg Service
         run: |
-          mvn play2:dist -pl knowlg-service
+          mvn play2:dist -pl knowlg-service -P${CSP}
 
       # Step 6: Build Docker image
       - name: Build Docker Image
         run: |
           IMAGE_NAME="knowlg-service"
           IMAGE_TAG=$(echo "${{ github.ref_name }}_$(echo $GITHUB_SHA | cut -c1-7)" | tr '[:upper:]' '[:lower:]')
-          docker build -f build/knowlg-service/Dockerfile -t $REGISTRY_URL/${IMAGE_NAME}:${IMAGE_TAG} .
+          docker build --build-arg CSP=${CSP} -f build/knowlg-service/Dockerfile -t $REGISTRY_URL/${IMAGE_NAME}:${IMAGE_TAG} .
 
           echo "IMAGE_NAME=${IMAGE_NAME}" >> $GITHUB_ENV
           echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_ENV

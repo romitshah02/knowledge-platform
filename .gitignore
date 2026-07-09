@@ -6,3 +6,4 @@
 *.conf
 docker/.migrations
 docker/.es-migrations
+sync-tool/dependency-reduced-pom.xml

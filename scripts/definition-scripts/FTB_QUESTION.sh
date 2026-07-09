@@ -8,7 +8,26 @@ curl -L -X POST '{{host}}/object/category/definition/v4/create' \
       "targetObjectType": "Question",
       "objectMetadata": {
         "config": {},
-        "schema": {}
+        "schema": {
+          "properties": {
+            "interactionTypes": {
+              "type": "array",
+              "items": { "type": "string", "enum": ["text"] }
+            },
+            "mimeType": {
+              "type": "string",
+              "enum": ["application/vnd.sunbird.question"]
+            },
+            "primaryCategory": {
+              "type": "string",
+              "enum": ["FTB Question"]
+            },
+            "qType": {
+              "type": "string",
+              "enum": ["FTB"]
+            }
+          }
+        }
       }
     }
   }
