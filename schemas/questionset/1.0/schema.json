@@ -545,7 +545,7 @@
         "Complete",
         "Score",
         "Duration",
-        "Score & Duration"
+        "Score and Duration"
       ]
     },
     "shuffle": {
@@ -723,5 +723,5 @@
       "type": "string"
     }
   },
-  "additionalProperties": false
+  "additionalProperties": true
 }
