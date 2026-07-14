@@ -38,6 +38,7 @@ on:
 permissions:
   contents: read       # allows the workflow to read repository contents
   pull-requests: read  # allows SonarCloud to decorate PRs with analysis results
+  security-events: write
 
 jobs:
   Analysis:
