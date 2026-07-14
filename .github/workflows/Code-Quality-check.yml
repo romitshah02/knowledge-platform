@@ -59,7 +59,7 @@ jobs:
 
       - name: Upload Content Test Results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: content-test-results
           path: 'content-api/content-service/target/surefire-reports/*.xml'
@@ -92,7 +92,7 @@ jobs:
 
       - name: Upload Taxonomy Test Results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: taxonomy-test-results
           path: 'taxonomy-api/taxonomy-service/target/surefire-reports/*.xml'
@@ -125,7 +125,7 @@ jobs:
 
       - name: Upload Search Test Results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: search-test-results
           path: 'search-api/search-service/target/surefire-reports/*.xml'
