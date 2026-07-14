@@ -182,6 +182,12 @@
 				<artifactId>cassandra-all</artifactId>
 				<version>3.11.18</version>
 			</dependency>
+			<!-- Security: htmlunit CVE-2023-4218 (XSLT RCE), forces 3.0.0 over 2.70.0 from play-specs2 -> play-test -> fluentlenium-core -->
+			<dependency>
+				<groupId>net.sourceforge.htmlunit</groupId>
+				<artifactId>htmlunit</artifactId>
+				<version>3.0.0</version>
+			</dependency>
 		</dependencies>
 	</dependencyManagement>
 
