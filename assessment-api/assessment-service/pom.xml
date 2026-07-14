@@ -175,7 +175,17 @@
                     <artifactId>guava</artifactId>
                     <groupId>com.google.guava</groupId>
                 </exclusion>
+                <!-- Security: htmlunit CVE-2023-4218 (XSLT RCE) -->
+                <exclusion>
+                    <groupId>net.sourceforge.htmlunit</groupId>
+                    <artifactId>htmlunit</artifactId>
+                </exclusion>
             </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>org.htmlunit</groupId>
+            <artifactId>htmlunit</artifactId>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.joda</groupId>

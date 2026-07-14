@@ -15,7 +15,7 @@
 		<scala.maj.version>2.13</scala.maj.version>
 		<scala.version>2.13.12</scala.version>
 		<scalatest.version>3.0.8</scalatest.version>
-		<fasterxml.jackson.version>2.18.6</fasterxml.jackson.version>
+		<fasterxml.jackson.version>2.18.9</fasterxml.jackson.version>
 		<logback.version>1.5.25</logback.version>
 	</properties>
 	<profiles>
@@ -182,11 +182,14 @@
 				<artifactId>cassandra-all</artifactId>
 				<version>3.11.18</version>
 			</dependency>
-			<!-- Security: htmlunit CVE-2023-4218 (XSLT RCE), forces 3.0.0 over 2.70.0 from play-specs2 -> play-test -> fluentlenium-core -->
+			<!-- Security: htmlunit CVE-2023-4218 (XSLT RCE). htmlunit renamed groupId net.sourceforge.htmlunit -> org.htmlunit at 3.0.0,
+			     so fluentlenium-core's transitive net.sourceforge.htmlunit:htmlunit:2.70.0 must be excluded per-module and
+			     org.htmlunit:htmlunit:3.0.0 added explicitly (test scope) alongside it. -->
 			<dependency>
-				<groupId>net.sourceforge.htmlunit</groupId>
+				<groupId>org.htmlunit</groupId>
 				<artifactId>htmlunit</artifactId>
 				<version>3.0.0</version>
+				<scope>test</scope>
 			</dependency>
 		</dependencies>
 	</dependencyManagement>
