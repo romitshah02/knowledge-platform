@@ -156,7 +156,7 @@
 			<dependency>
 				<groupId>org.apache.ant</groupId>
 				<artifactId>ant</artifactId>
-				<version>1.10.14</version>
+				<version>1.10.17</version>
 			</dependency>
 			<!-- Security: opentelemetry-api CVE-2026-45292 -->
 			<dependency>
