@@ -66,7 +66,7 @@ jobs:
 
       - name: Publish Content Test Results
         if: always()
-        uses: dorny/test-reporter@v1
+        uses: dorny/test-reporter@v3
         with:
           name: Content Test Results
           path: content-api/content-service/target/surefire-reports/*.xml
@@ -99,7 +99,7 @@ jobs:
 
       - name: Publish Taxonomy Test Results
         if: always()
-        uses: dorny/test-reporter@v1
+        uses: dorny/test-reporter@v3
         with:
           name: Taxonomy Test Results
           path: taxonomy-api/taxonomy-service/target/surefire-reports/*.xml
@@ -132,7 +132,7 @@ jobs:
 
       - name: Publish Search Test Results
         if: always()
-        uses: dorny/test-reporter@v1
+        uses: dorny/test-reporter@v3
         with:
           name: Search Test Results
           path: search-api/search-service/target/surefire-reports/*.xml
