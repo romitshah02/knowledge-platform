@@ -182,9 +182,7 @@
 				<artifactId>cassandra-all</artifactId>
 				<version>3.11.18</version>
 			</dependency>
-			<!-- Security: htmlunit CVE-2023-4218 (XSLT RCE). htmlunit renamed groupId net.sourceforge.htmlunit -> org.htmlunit at 3.0.0,
-			     so fluentlenium-core's transitive net.sourceforge.htmlunit:htmlunit:2.70.0 must be excluded per-module and
-			     org.htmlunit:htmlunit:3.0.0 added explicitly (test scope) alongside it. -->
+			<!-- Security: htmlunit CVE-2023-4218 (XSLT RCE). -->
 			<dependency>
 				<groupId>org.htmlunit</groupId>
 				<artifactId>htmlunit</artifactId>
