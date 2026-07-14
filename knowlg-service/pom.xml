@@ -50,7 +50,7 @@
         <scala.major.version>2.13</scala.major.version>
         <scala.maj.version>2.13</scala.maj.version>
         <scala.version>2.13.12</scala.version>
-        <play2.version>3.0.5</play2.version>
+        <play2.version>3.0.11</play2.version>
         <play2.plugin.version>1.0.0-rc5</play2.plugin.version>
         <sbt-compiler.plugin.version>1.0.0</sbt-compiler.plugin.version>
         <netty.version>4.1.135.Final</netty.version>
