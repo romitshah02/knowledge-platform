@@ -155,6 +155,15 @@ class QuestionSetController @Inject()(@Named(ActorNames.QUESTION_SET_ACTOR) ques
 		getResult(ApiId.IMPORT_QUESTION_SET, questionSetActor, questionSetRequest)
 	}
 
+	def importQti() = Action.async { implicit request =>
+		val headers = commonHeaders()
+		val formData = requestFormData()
+		formData.putAll(headers)
+		val questionSetRequest = getRequest(formData, headers, QuestionSetOperations.importQtiPackage.toString)
+		setRequestContext(questionSetRequest, version, objectType, schemaName)
+		getResult(ApiId.IMPORT_QTI_QUESTION_SET, questionSetActor, questionSetRequest)
+	}
+
 	def systemUpdate(identifier: String) = Action.async { implicit request =>
 		val headers = commonHeaders()
 		val body = requestBody()

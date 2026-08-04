@@ -45,6 +45,7 @@ PATCH     /questionset/v4/hierarchy/update           assessment.controllers.v4.Q
 GET       /questionset/v4/hierarchy/:identifier      assessment.controllers.v4.QuestionSetController.getHierarchy(identifier:String, mode:Option[String])
 POST      /questionset/v4/reject/:identifier         assessment.controllers.v4.QuestionSetController.reject(identifier:String)
 POST      /questionset/v4/import                     assessment.controllers.v4.QuestionSetController.importQuestionSet()
+POST      /questionset/v4/qti-import                 assessment.controllers.v4.QuestionSetController.importQti()
 PATCH     /questionset/v4/system/update/:identifier  assessment.controllers.v4.QuestionSetController.systemUpdate(identifier:String)
 POST      /questionset/v4/copy/:identifier           assessment.controllers.v4.QuestionSetController.copy(identifier:String, mode:Option[String], type:String?="deep")
 PATCH     /questionset/v4/comment/update/:identifier assessment.controllers.v4.QuestionSetController.updateComment(identifier:String)

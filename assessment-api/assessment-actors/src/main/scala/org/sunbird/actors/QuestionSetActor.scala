@@ -14,6 +14,7 @@ import org.sunbird.graph.dac.model.Node
 import org.sunbird.graph.nodes.DataNode
 import org.sunbird.managers.questionset.HierarchyManager.hierarchyPrefix
 import org.sunbird.managers.questionset.{AssessmentManager, CopyManager, HierarchyManager, UpdateHierarchyManager}
+import org.sunbird.qti.QtiImportManager
 import org.sunbird.utils.questionset.RequestUtil
 
 import java.util
@@ -41,6 +42,7 @@ class QuestionSetActor @Inject()(implicit oec: OntologyEngineContext) extends Ab
 		case "getHierarchy" => HierarchyManager.getHierarchy(request)
 		case "rejectQuestionSet" => reject(request)
 		case "importQuestionSet" => importQuestionSet(request)
+		case "importQtiPackage" => importQtiPackage(request)
 		case "systemUpdateQuestionSet" => systemUpdate(request)
 		case "copyQuestionSet" => copy(request)
 		case "updateCommentQuestionSet" => updateComment(request)
@@ -138,6 +140,8 @@ class QuestionSetActor @Inject()(implicit oec: OntologyEngineContext) extends Ab
 	}
 
 	def importQuestionSet(request: Request): Future[Response] = importMgr.importObject(request)
+
+	def importQtiPackage(request: Request): Future[Response] = new QtiImportManager().importPackage(request)
 
 	def getImportConfig(): ImportConfig = {
 		val requiredProps = Platform.getStringList("import.required_props.questionset", java.util.Arrays.asList("name", "code", "mimeType", "framework")).asScala.toList

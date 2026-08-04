@@ -47,6 +47,7 @@ object ApiId {
 	val GET_HIERARCHY = "api.questionset.hierarchy.get"
 	val REJECT_QUESTION_SET = "api.questionset.reject"
 	val IMPORT_QUESTION_SET = "api.questionset.import"
+	val IMPORT_QTI_QUESTION_SET = "api.questionset.qti.import"
 	val SYSTEM_UPDATE_QUESTION_SET = "api.questionset.system.update"
 	val COPY_QUESTION_SET = "api.questionset.copy"
 	val UPDATE_COMMENT_QUESTION_SET = "api.questionset.update.comment"

@@ -1,5 +1,6 @@
 package assessment.controllers
 
+import java.io.File
 import java.util.UUID
 import org.apache.pekko.actor.ActorRef
 import org.apache.pekko.pattern.Patterns
@@ -18,6 +19,22 @@ abstract class BaseController(protected val cc: ControllerComponents)(implicit e
     def requestBody()(implicit request: Request[AnyContent]) = {
         val body = request.body.asJson.getOrElse("{}").toString
         JavaJsonUtils.deserialize[java.util.Map[String, Object]](body).getOrDefault("request", new java.util.HashMap()).asInstanceOf[java.util.Map[String, Object]]
+    }
+
+    def requestFormData()(implicit request: Request[AnyContent]): java.util.Map[String, AnyRef] = {
+        val formData = new java.util.HashMap[String, AnyRef]()
+        request.body.asMultipartFormData.foreach(multipart => {
+            multipart.files.headOption.foreach(filePart => {
+                val uploadedFile = filePart.ref.path.toFile
+                formData.put("file", uploadedFile)
+            })
+            multipart.dataParts.foreach { case (key, values) =>
+                if (values.nonEmpty) {
+                    formData.put(key, values.head)
+                }
+            }
+        })
+        formData
     }
 
     def commonHeaders()(implicit request: Request[AnyContent]): java.util.Map[String, Object] = {
