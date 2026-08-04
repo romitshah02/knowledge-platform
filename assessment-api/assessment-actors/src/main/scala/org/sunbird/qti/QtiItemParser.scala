@@ -108,22 +108,22 @@ class QtiItemParser {
   }
 
   private def findInteraction(itemBody: Elem, itemId: String): Option[Elem] = {
-    val choiceInteraction = (itemBody \ QtiConstants.CHOICE_INTERACTION).headOption.map(_.asInstanceOf[Elem])
+    val choiceInteraction = (itemBody \\ QtiConstants.CHOICE_INTERACTION).headOption.map(_.asInstanceOf[Elem])
     if (choiceInteraction.isDefined) return choiceInteraction
 
-    val matchInteraction = (itemBody \ QtiConstants.MATCH_INTERACTION).headOption.map(_.asInstanceOf[Elem])
+    val matchInteraction = (itemBody \\ QtiConstants.MATCH_INTERACTION).headOption.map(_.asInstanceOf[Elem])
     if (matchInteraction.isDefined) return matchInteraction
 
-    val associateInteraction = (itemBody \ QtiConstants.ASSOCIATE_INTERACTION).headOption.map(_.asInstanceOf[Elem])
+    val associateInteraction = (itemBody \\ QtiConstants.ASSOCIATE_INTERACTION).headOption.map(_.asInstanceOf[Elem])
     if (associateInteraction.isDefined) return associateInteraction
 
-    val orderInteraction = (itemBody \ QtiConstants.ORDER_INTERACTION).headOption.map(_.asInstanceOf[Elem])
+    val orderInteraction = (itemBody \\ QtiConstants.ORDER_INTERACTION).headOption.map(_.asInstanceOf[Elem])
     if (orderInteraction.isDefined) return orderInteraction
 
-    val textEntry = (itemBody \ QtiConstants.TEXT_ENTRY_INTERACTION).headOption.map(_.asInstanceOf[Elem])
+    val textEntry = (itemBody \\ QtiConstants.TEXT_ENTRY_INTERACTION).headOption.map(_.asInstanceOf[Elem])
     if (textEntry.isDefined) return textEntry
 
-    val extendedText = (itemBody \ QtiConstants.EXTENDED_TEXT_INTERACTION).headOption.map(_.asInstanceOf[Elem])
+    val extendedText = (itemBody \\ QtiConstants.EXTENDED_TEXT_INTERACTION).headOption.map(_.asInstanceOf[Elem])
     extendedText
   }
 
