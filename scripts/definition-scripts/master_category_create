@@ -519,3 +519,69 @@ curl --location --request POST '{{host}}/object/category/v4/create' \
     }
 }'
 
+curl --location --request POST '{{host}}/object/category/v4/create' \
+--header 'Content-Type: application/json' \
+--data-raw '{
+    "request": {
+        "objectCategory": {
+            "name": "Hot Text Question",
+            "description": "Hot Text Question — select words/phrases within a text passage"
+        }
+    }
+}'
+
+curl --location --request POST '{{host}}/object/category/v4/create' \
+--header 'Content-Type: application/json' \
+--data-raw '{
+    "request": {
+        "objectCategory": {
+            "name": "Gap Match Question",
+            "description": "Gap Match Question — drag choices into gaps in a text passage"
+        }
+    }
+}'
+
+curl --location --request POST '{{host}}/object/category/v4/create' \
+--header 'Content-Type: application/json' \
+--data-raw '{
+    "request": {
+        "objectCategory": {
+            "name": "Inline Choice Question",
+            "description": "Inline Choice Question — dropdown choices embedded in a text passage"
+        }
+    }
+}'
+
+curl --location --request POST '{{host}}/object/category/v4/create' \
+--header 'Content-Type: application/json' \
+--data-raw '{
+    "request": {
+        "objectCategory": {
+            "name": "Hotspot Question",
+            "description": "Hotspot Question — select a region on an image"
+        }
+    }
+}'
+
+curl --location --request POST '{{host}}/object/category/v4/create' \
+--header 'Content-Type: application/json' \
+--data-raw '{
+    "request": {
+        "objectCategory": {
+            "name": "Upload Question",
+            "description": "Upload Question — submit a file as the response"
+        }
+    }
+}'
+
+curl --location --request POST '{{host}}/object/category/v4/create' \
+--header 'Content-Type: application/json' \
+--data-raw '{
+    "request": {
+        "objectCategory": {
+            "name": "Slider Question",
+            "description": "Slider Question — select a value on a numeric scale"
+        }
+    }
+}'
+

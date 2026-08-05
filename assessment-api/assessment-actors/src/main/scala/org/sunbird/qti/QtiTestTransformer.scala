@@ -79,7 +79,7 @@ class QtiTestTransformer {
     // Create Question nodes for each successfully-transformed item
     availableItemIds.foreach { itemId =>
       val qMetadata = transformedItems(itemId)
-      val rawName = qMetadata.body.take(50).trim
+      val rawName = qMetadata.body.replaceAll("<[^>]*>", " ").replaceAll("\\s+", " ").trim.take(50).trim
       val qName = if (rawName.length >= 5) rawName else s"QTI Question: $itemId"
       val questionMetadata = Map[String, AnyRef](
         "name" -> qName,

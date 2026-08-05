@@ -53,6 +53,13 @@
             <version>1.0-SNAPSHOT</version>
             <type>jar</type>
         </dependency>
+        <!-- StorageService (cloud upload for QTI-imported media assets) — see
+             org.sunbird.qti.QtiAssetUploader. -->
+        <dependency>
+            <groupId>org.sunbird</groupId>
+            <artifactId>mimetype-manager</artifactId>
+            <version>1.0-SNAPSHOT</version>
+        </dependency>
         <dependency>
             <groupId>org.scalatest</groupId>
             <artifactId>scalatest_${scala.maj.version}</artifactId>

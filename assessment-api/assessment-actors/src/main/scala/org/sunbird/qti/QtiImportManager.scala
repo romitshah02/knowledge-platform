@@ -6,6 +6,7 @@ import scala.util.{Failure, Success, Try}
 import scala.collection.JavaConverters._
 import org.sunbird.common.dto.{Request, Response, ResponseHandler}
 import org.sunbird.common.exception.ClientException
+import org.sunbird.cloudstore.StorageService
 import org.sunbird.common.{DateUtils, Platform}
 import org.sunbird.graph.OntologyEngineContext
 import org.sunbird.graph.nodes.DataNode
@@ -18,7 +19,7 @@ case class PersistResult(
   failedItems: List[(String, String)]
 )
 
-class QtiImportManager {
+class QtiImportManager(storageService: StorageService) {
 
   private val extractor = new QtiPackageExtractor()
   private val manifestReader = new QtiManifestReader()
@@ -26,6 +27,7 @@ class QtiImportManager {
   private val testParser = new QtiTestParser()
   private val itemTransformer = new QtiItemTransformer()
   private val testTransformer = new QtiTestTransformer()
+  private val assetUploader = new QtiAssetUploader(storageService)
 
   def importPackage(request: Request)(
     implicit ec: ExecutionContext,
@@ -59,13 +61,16 @@ class QtiImportManager {
       val transformedItems = scala.collection.mutable.Map[String, QuestionMetadata]()
 
       val parsedTest = if (testResources.nonEmpty) {
-        val testResource = testResources.head
-        val testFilePath = extractor.resolveItemPath(extractionPath, testResource.href)
-        val testFile = new File(extractionPath + File.separator + testFilePath)
-        testParser.parse(testFile) match {
-          case Right(qtiTest) => Some(qtiTest)
-          case Left(error) =>
-            throw new ClientException(QtiConstants.ERR_IMPORT_FAILED, s"Test parsing failed: $error")
+        val attempts = testResources.map { testResource =>
+          val testFilePath = extractor.resolveItemPath(extractionPath, testResource.href)
+          val testFile = new File(extractionPath + File.separator + testFilePath)
+          testResource.identifier -> testParser.parse(testFile)
+        }
+        attempts.collectFirst { case (_, Right(qtiTest)) => qtiTest }.orElse {
+          attempts.foreach { case (id, Left(error)) =>
+            TelemetryManager.warn(s"Resource $id is typed as a test but isn't a real assessmentTest, skipping: $error")
+          }
+          None
         }
       } else None
 
@@ -97,7 +102,8 @@ class QtiImportManager {
 
         Try(itemParser.parse(itemFile)) match {
           case Success(Right(parsedItem)) =>
-            itemTransformer.transform(parsedItem) match {
+            val mediaMap = resolveAndUploadMedia(parsedItem.mediaRefs, itemFile)
+            itemTransformer.transform(parsedItem, mediaMap) match {
               case Right(metadata) =>
                 transformedItems(resource.identifier) = metadata
               case Left(error) =>
@@ -303,6 +309,21 @@ class QtiImportManager {
     TelemetryManager.warn(s"Created default QuestionSet ${qsNode.getIdentifier} with no test file — " +
       s"${transformedItems.size} parsed items were not persisted as Questions (known gap)")
     PersistResult(qsNode.getIdentifier, List(), List())
+  }
+
+  // Resolves each media href against the item file's own directory (QTI media refs are
+  // relative to the item, not the package root) and uploads it directly to cloud storage.
+  private def resolveAndUploadMedia(mediaRefs: List[String], itemFile: File): Map[String, (String, String)] = {
+    val itemDir = itemFile.getParentFile
+    mediaRefs.flatMap { ref =>
+      Try {
+        val cleanedRef = extractor.resolveItemPath(itemDir.getAbsolutePath, ref)
+        val mediaFile = new File(itemDir, cleanedRef)
+        val url = assetUploader.upload(mediaFile).get
+        val id = "qti_asset_" + Integer.toHexString(ref.hashCode)
+        ref -> (id, url)
+      }.toOption
+    }.toMap
   }
 
   private def getTempPath(): String = {

@@ -2,6 +2,7 @@ package org.sunbird.actors
 
 import org.apache.pekko.actor.Props
 import org.scalamock.scalatest.MockFactory
+import org.sunbird.cloudstore.StorageService
 import org.sunbird.common.HttpUtil
 import org.sunbird.common.dto.{Request, Response, ResponseHandler, ResponseParams}
 import org.sunbird.common.exception.ResponseCode
@@ -18,6 +19,8 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 
 class QuestionSetActorTest extends BaseSpec with MockFactory {
+
+    implicit val ss: StorageService = mock[StorageService]
 
     "questionSetActor" should "return failed response for 'unknown' operation" in {
         implicit val oec: OntologyEngineContext = new OntologyEngineContext

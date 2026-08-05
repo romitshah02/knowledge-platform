@@ -267,7 +267,11 @@
           "file-upload",
           "canvas",
           "match",
-          "order"
+          "order",
+          "hottext",
+          "gap-match",
+          "inline-choice",
+          "slider"
         ]
       }
     },
@@ -282,7 +286,13 @@
         "MTF",
         "SEQ",
         "REO",
-        "BOOL"
+        "BOOL",
+        "HOTTEXT",
+        "GAP-MATCH",
+        "INLINE-CHOICE",
+        "HOTSPOT",
+        "SLIDER",
+        "UPLOAD"
       ]
     },
     "editorState": {

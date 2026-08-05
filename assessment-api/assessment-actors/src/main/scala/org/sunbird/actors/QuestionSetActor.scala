@@ -14,6 +14,7 @@ import org.sunbird.graph.dac.model.Node
 import org.sunbird.graph.nodes.DataNode
 import org.sunbird.managers.questionset.HierarchyManager.hierarchyPrefix
 import org.sunbird.managers.questionset.{AssessmentManager, CopyManager, HierarchyManager, UpdateHierarchyManager}
+import org.sunbird.cloudstore.StorageService
 import org.sunbird.qti.QtiImportManager
 import org.sunbird.utils.questionset.RequestUtil
 
@@ -22,7 +23,7 @@ import javax.inject.Inject
 import scala.collection.JavaConverters._
 import scala.concurrent.{ExecutionContext, Future}
 
-class QuestionSetActor @Inject()(implicit oec: OntologyEngineContext) extends AbstractActor {
+class QuestionSetActor @Inject()(implicit oec: OntologyEngineContext, ss: StorageService) extends AbstractActor {
 
 	implicit val ec: ExecutionContext = getContext().dispatcher
 	private lazy val importConfig = getImportConfig()
@@ -141,7 +142,7 @@ class QuestionSetActor @Inject()(implicit oec: OntologyEngineContext) extends Ab
 
 	def importQuestionSet(request: Request): Future[Response] = importMgr.importObject(request)
 
-	def importQtiPackage(request: Request): Future[Response] = new QtiImportManager().importPackage(request)
+	def importQtiPackage(request: Request): Future[Response] = new QtiImportManager(ss).importPackage(request)
 
 	def getImportConfig(): ImportConfig = {
 		val requiredProps = Platform.getStringList("import.required_props.questionset", java.util.Arrays.asList("name", "code", "mimeType", "framework")).asScala.toList

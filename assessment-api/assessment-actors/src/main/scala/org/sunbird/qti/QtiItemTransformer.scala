@@ -10,12 +10,13 @@ case class QuestionMetadata(
   interactionTypes: List[String],
   body: String,
   interactions: Map[String, AnyRef],
-  responseDeclaration: Map[String, AnyRef]
+  responseDeclaration: Map[String, AnyRef],
+  media: List[Map[String, AnyRef]] = List()
 )
 
 class QtiItemTransformer {
 
-  def transform(item: QtiItem): Either[TransformError, QuestionMetadata] = {
+  def transform(item: QtiItem, mediaMap: Map[String, (String, String)] = Map()): Either[TransformError, QuestionMetadata] = {
     val categoryResult = mapInteractionToCategory(item.interaction)
     if (categoryResult.isEmpty) {
       return Left(TransformError(s"Unsupported interaction type: ${item.interaction.interactionType}"))
@@ -24,22 +25,34 @@ class QtiItemTransformer {
     val (primaryCategory, qType) = categoryResult.get
     val interactionTypes = List(canonicalInteractionType(primaryCategory))
 
-    // Build question body from stimulus + body
-    val bodyText = (item.stimulus, item.body) match {
-      case (Some(stim), body) if body.nonEmpty => s"$stim\n\n$body"
-      case (Some(stim), _) => stim
-      case (_, body) if body.nonEmpty => body
-      case _ => ""
-    }
+    // Build question body from stimulus + item-body text + the interaction's own prompt.
+    val bodyText = List(item.stimulus.getOrElse(""), item.body, item.interaction.prompt)
+      .filter(_.nonEmpty)
+      .mkString("\n\n")
 
     if (bodyText.isEmpty) {
-      return Left(TransformError(s"Item ${item.identifier} has no body or stimulus content"))
+      return Left(TransformError(s"Item ${item.identifier} has no body, stimulus, or prompt content"))
     }
 
     // Validate interaction-specific constraints
     val validationError = validateInteraction(item.interaction)
     if (validationError.isDefined) {
       return Left(TransformError(validationError.get))
+    }
+
+    // Every local media ref this item has must have uploaded successfully — a dead
+    val unresolvedRefs = item.mediaRefs.filterNot(mediaMap.contains)
+    if (unresolvedRefs.nonEmpty) {
+      return Left(TransformError(s"Item ${item.identifier} has unresolved media references: ${unresolvedRefs.mkString(", ")}"))
+    }
+
+    val bodyWithMedia = item.mediaRefs.foldLeft(bodyText) { (acc, ref) =>
+      val (_, url) = mediaMap(ref)
+      acc.replace(s""""$ref"""", s""""$url"""")
+    }
+    val media = item.mediaRefs.map { ref =>
+      val (id, url) = mediaMap(ref)
+      Map[String, AnyRef]("id" -> id, "type" -> mediaTypeFor(ref), "src" -> url)
     }
 
     val interactions = buildInteractions(item.interaction, interactionTypes.head)
@@ -50,10 +63,18 @@ class QtiItemTransformer {
       primaryCategory = primaryCategory,
       qType = qType,
       interactionTypes = interactionTypes,
-      body = bodyText,
+      body = bodyWithMedia,
       interactions = interactions,
-      responseDeclaration = responseDeclaration
+      responseDeclaration = responseDeclaration,
+      media = media
     ))
+  }
+
+  private def mediaTypeFor(ref: String): String = {
+    val lower = ref.toLowerCase
+    if (lower.endsWith(".mp3") || lower.endsWith(".wav") || lower.endsWith(".ogg")) "audio"
+    else if (lower.endsWith(".mp4") || lower.endsWith(".webm")) "video"
+    else "image"
   }
 
   // Category-schema-enforced canonical interactionTypes vocabulary — keyed by primaryCategory,
@@ -66,6 +87,12 @@ class QtiItemTransformer {
       case QtiConstants.MTF => "match"
       case QtiConstants.SEQ => "order"
       case QtiConstants.REO => "order"
+      case QtiConstants.QTI_HOTTEXT => "hottext"
+      case QtiConstants.QTI_GAP_MATCH => "gap-match"
+      case QtiConstants.QTI_INLINE_CHOICE => "inline-choice"
+      case QtiConstants.QTI_HOTSPOT => "canvas"
+      case QtiConstants.QTI_SLIDER => "slider"
+      case QtiConstants.QTI_UPLOAD => "file-upload"
       case _ => "choice"
     }
   }
@@ -80,6 +107,12 @@ class QtiItemTransformer {
       case QtiConstants.ORDER_INTERACTION => Some((QtiConstants.SEQ, "SEQ"))
       case QtiConstants.MATCH_INTERACTION => Some((QtiConstants.MTF, "MTF"))
       case QtiConstants.ASSOCIATE_INTERACTION => Some((QtiConstants.REO, "REO"))
+      case QtiConstants.HOTTEXT_INTERACTION => Some((QtiConstants.QTI_HOTTEXT, "HOTTEXT"))
+      case QtiConstants.GAP_MATCH_INTERACTION => Some((QtiConstants.QTI_GAP_MATCH, "GAP-MATCH"))
+      case QtiConstants.INLINE_CHOICE_INTERACTION => Some((QtiConstants.QTI_INLINE_CHOICE, "INLINE-CHOICE"))
+      case QtiConstants.HOTSPOT_INTERACTION => Some((QtiConstants.QTI_HOTSPOT, "HOTSPOT"))
+      case QtiConstants.SLIDER_INTERACTION => Some((QtiConstants.QTI_SLIDER, "SLIDER"))
+      case QtiConstants.UPLOAD_INTERACTION => Some((QtiConstants.QTI_UPLOAD, "UPLOAD"))
       case _ => None
     }
   }
@@ -116,6 +149,9 @@ class QtiItemTransformer {
         // Phase 1: any extended text
         None
 
+      case t if QtiConstants.PASSTHROUGH_INTERACTIONS.contains(t) =>
+        if (interaction.rawMarkup.forall(_.isEmpty)) Some(s"$t has no markup to pass through") else None
+
       case _ =>
         Some(s"Unsupported interaction type: ${interaction.interactionType}")
     }
@@ -139,6 +175,8 @@ class QtiItemTransformer {
             "right" -> right.map(o => Map("value" -> o.identifier, "label" -> o.label))
           )
         )
+      case "hottext" | "gap-match" | "inline-choice" | "canvas" | "slider" | "file-upload" =>
+        Map("type" -> canonicalType, "markup" -> interaction.rawMarkup.getOrElse(""))
       case _ =>
         Map("type" -> canonicalType)
     }
