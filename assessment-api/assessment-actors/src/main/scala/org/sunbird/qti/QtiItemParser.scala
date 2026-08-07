@@ -89,12 +89,10 @@ class QtiItemParser {
       return Left(s"Item $identifier has no qti-item-body")
     }
     val itemBody = itemBodySeq.head.asInstanceOf[Elem]
-    val (stimulus, stimulusMediaRefs) = extractStimulus(xml, itemBody, stimulusMap) match {
-      case Some((html, refs)) => (Some(html), refs)
-      case None => (None, List())
-    }
 
-    // Find interaction
+    // Find interaction first — stimulus/body serialization below needs to skip its
+    // element specifically wherever it's nested, or the raw QTI tag leaks into the
+    // rendered HTML verbatim (invisible if self-closing, duplicated content otherwise).
     val interaction = findInteraction(itemBody, identifier)
     if (interaction.isEmpty) {
       return Left(s"Item $identifier has no supported interaction")
@@ -102,13 +100,26 @@ class QtiItemParser {
 
     val interactionNode = interaction.get
 
+    // textEntry gets a body-token (matching FTB's [[responseN]] convention, same as
+    // inline-choice below) so the blank renders inline where the interaction was;
+    // everything else just drops its own interaction element from stimulus/body.
+    val blankToken = interactionNode.label match {
+      case QtiConstants.TEXT_ENTRY_INTERACTION => "[[response1]]"
+      case _ => ""
+    }
+
+    val (stimulus, stimulusMediaRefs) = extractStimulus(xml, itemBody, stimulusMap, interactionNode, blankToken) match {
+      case Some((html, refs)) => (Some(html), refs)
+      case None => (None, List())
+    }
+
     val bodyText = interactionNode.label match {
       case QtiConstants.HOTTEXT_INTERACTION | QtiConstants.GAP_MATCH_INTERACTION | QtiConstants.MEDIA_INTERACTION =>
         extractInteractionBody(interactionNode)
       case QtiConstants.INLINE_CHOICE_INTERACTION =>
         (itemBody \ "p").map(p => tokenizeInlineChoice(p)).mkString(" ").trim
       case _ =>
-        (itemBody \ "p").map(p => serializeInner(p)).mkString(" ").trim
+        (itemBody \ "p").map(p => serializeInnerSkipping(p, interactionNode, blankToken)).mkString(" ").trim
     }
 
     // Local (non-http/data-URI) image/audio/video references — resolved and uploaded
@@ -117,7 +128,7 @@ class QtiItemParser {
     val mediaRefs = extractLocalMediaRefs(itemBody) ++ stimulusMediaRefs
 
     val responseId = interactionNode.label match {
-      case QtiConstants.INLINE_CHOICE_INTERACTION => "response1"
+      case QtiConstants.INLINE_CHOICE_INTERACTION | QtiConstants.TEXT_ENTRY_INTERACTION => "response1"
       case _ => (interactionNode \@ "response-identifier").trim
     }
     val responseDeclaration = extractResponseDeclarationData(xml, (interactionNode \@ "response-identifier").trim)
@@ -181,12 +192,25 @@ class QtiItemParser {
     case other => other.text
   }
 
-  private def extractStimulus(xml: Elem, itemBody: Elem, stimulusMap: Map[String, (String, List[String])]): Option[(String, List[String])] = {
+  private def serializeInnerSkipping(node: scala.xml.Node, skip: Elem, replacement: String): String =
+    node.child.map(c => serializeNodeSkipping(c, skip, replacement)).mkString
+
+  private def serializeNodeSkipping(node: scala.xml.Node, skip: Elem, replacement: String): String = node match {
+    case e: Elem if e eq skip => replacement
+    case e: Elem =>
+      val attrs = e.attributes.asAttrMap.map { case (k, v) => s"""$k="$v"""" }.mkString(" ")
+      val openTag = if (attrs.nonEmpty) s"<${e.label} $attrs>" else s"<${e.label}>"
+      s"$openTag${e.child.map(c => serializeNodeSkipping(c, skip, replacement)).mkString}</${e.label}>"
+    case t: scala.xml.Text => t.text
+    case other => other.text
+  }
+
+  private def extractStimulus(xml: Elem, itemBody: Elem, stimulusMap: Map[String, (String, List[String])], interactionNode: Elem, blankToken: String): Option[(String, List[String])] = {
     val fromRef = (xml \\ "qti-assessment-stimulus-ref").headOption
       .flatMap(ref => stimulusMap.get((ref \@ "identifier").trim))
     fromRef.orElse {
       val div = (itemBody \ "div").headOption
-      div.map(d => serializeInner(d).trim).filter(_.nonEmpty).map(html => (html, List()))
+      div.map(d => serializeInnerSkipping(d, interactionNode, blankToken).trim).filter(_.nonEmpty).map(html => (html, List()))
     }
   }
 

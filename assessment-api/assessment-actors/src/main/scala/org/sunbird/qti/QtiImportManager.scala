@@ -231,6 +231,7 @@ class QtiImportManager(storageService: StorageService) {
         "objectType" -> "Question",
         "createdOn" -> DateUtils.formatCurrentDate(),
         "lastUpdatedOn" -> DateUtils.formatCurrentDate()
+        // "visibility" -> "Parent"
       )
       val qContext = new java.util.HashMap[String, AnyRef]()
       qContext.put("graph_id", "domain")
