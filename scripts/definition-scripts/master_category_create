@@ -585,3 +585,80 @@ curl --location --request POST '{{host}}/object/category/v4/create' \
     }
 }'
 
+curl --location --request POST '{{host}}/object/category/v4/create' \
+--header 'Content-Type: application/json' \
+--data-raw '{
+    "request": {
+        "objectCategory": {
+            "name": "Select Point Question",
+            "description": "Select Point Question — mark a point on an image"
+        }
+    }
+}'
+
+curl --location --request POST '{{host}}/object/category/v4/create' \
+--header 'Content-Type: application/json' \
+--data-raw '{
+    "request": {
+        "objectCategory": {
+            "name": "Position Object Question",
+            "description": "Position Object Question — drag objects onto positions on an image"
+        }
+    }
+}'
+
+curl --location --request POST '{{host}}/object/category/v4/create' \
+--header 'Content-Type: application/json' \
+--data-raw '{
+    "request": {
+        "objectCategory": {
+            "name": "Graphic Gap Match Question",
+            "description": "Graphic Gap Match Question — drag gap choices onto hotspots on an image"
+        }
+    }
+}'
+
+curl --location --request POST '{{host}}/object/category/v4/create' \
+--header 'Content-Type: application/json' \
+--data-raw '{
+    "request": {
+        "objectCategory": {
+            "name": "Graphic Order Question",
+            "description": "Graphic Order Question — order hotspots on an image"
+        }
+    }
+}'
+
+curl --location --request POST '{{host}}/object/category/v4/create' \
+--header 'Content-Type: application/json' \
+--data-raw '{
+    "request": {
+        "objectCategory": {
+            "name": "Graphic Associate Question",
+            "description": "Graphic Associate Question — associate pairs of hotspots on an image"
+        }
+    }
+}'
+
+curl --location --request POST '{{host}}/object/category/v4/create' \
+--header 'Content-Type: application/json' \
+--data-raw '{
+    "request": {
+        "objectCategory": {
+            "name": "Media Question",
+            "description": "Media Question — respond after playing an audio/video clip"
+        }
+    }
+}'
+
+curl --location --request POST '{{host}}/object/category/v4/create' \
+--header 'Content-Type: application/json' \
+--data-raw '{
+    "request": {
+        "objectCategory": {
+            "name": "Drawing Question",
+            "description": "Drawing Question — freehand draw over an image. No Citolab component; backend support only, for use if the amp-up-io player is adopted instead"
+        }
+    }
+}'
+

@@ -49,26 +49,56 @@ class QtiImportManager(storageService: StorageService) {
       val resources = manifestReader.readResources(manifest)
       val itemResources = resources.filter(_.resourceType == QtiConstants.QTI_ITEM_V3_TYPE)
       val testResources = resources.filter(_.resourceType == QtiConstants.QTI_TEST_V3_TYPE)
+      val stimulusResources = resources.filter(_.resourceType == QtiConstants.QTI_STIMULUS_V3_TYPE)
 
       if (itemResources.isEmpty && testResources.isEmpty) {
         throw new ClientException(QtiConstants.ERR_INVALID_MANIFEST,
           "No QTI 3.0 items or tests found in manifest")
       }
 
-      TelemetryManager.info(s"Found ${itemResources.size} items and ${testResources.size} tests")
+      TelemetryManager.info(s"Found ${itemResources.size} items, ${testResources.size} tests, ${stimulusResources.size} stimuli")
+      val stimulusMediaUploadMap = scala.collection.mutable.Map[String, (String, String)]()
+
+      val declaredStimulusMap: Map[String, (String, List[String])] = stimulusResources.flatMap { resource =>
+        val stimulusFilePath = extractor.resolveItemPath(extractionPath, resource.href)
+        val stimulusFile = new File(extractionPath + File.separator + stimulusFilePath)
+        itemParser.parseStimulus(stimulusFile) match {
+          case Right((html, refs)) =>
+            stimulusMediaUploadMap ++= resolveAndUploadMedia(refs, stimulusFile)
+            Some(resource.identifier -> (html, refs))
+          case Left(error) =>
+            TelemetryManager.warn(s"Failed to parse stimulus ${resource.identifier}: $error")
+            None
+        }
+      }.toMap
 
       val itemFailures = scala.collection.mutable.Map[String, String]()
       val transformedItems = scala.collection.mutable.Map[String, QuestionMetadata]()
 
+      val testAttempts = testResources.map { testResource =>
+        val testFilePath = extractor.resolveItemPath(extractionPath, testResource.href)
+        val testFile = new File(extractionPath + File.separator + testFilePath)
+        (testResource.identifier, testFile, testParser.parse(testFile))
+      }
+
+      val recoveredStimulusMap: Map[String, (String, List[String])] = testAttempts.collect {
+        case (id, file, Left(_)) => id -> (file, itemParser.parseStimulus(file))
+      }.collect {
+        case (id, (file, Right((html, refs)))) =>
+          stimulusMediaUploadMap ++= resolveAndUploadMedia(refs, file)
+          id -> (html, refs)
+      }.toMap
+
+      val stimulusMap = declaredStimulusMap ++ recoveredStimulusMap
+
       val parsedTest = if (testResources.nonEmpty) {
-        val attempts = testResources.map { testResource =>
-          val testFilePath = extractor.resolveItemPath(extractionPath, testResource.href)
-          val testFile = new File(extractionPath + File.separator + testFilePath)
-          testResource.identifier -> testParser.parse(testFile)
-        }
-        attempts.collectFirst { case (_, Right(qtiTest)) => qtiTest }.orElse {
-          attempts.foreach { case (id, Left(error)) =>
-            TelemetryManager.warn(s"Resource $id is typed as a test but isn't a real assessmentTest, skipping: $error")
+        testAttempts.collectFirst { case (_, _, Right(qtiTest)) => qtiTest }.orElse {
+          testAttempts.foreach {
+            case (id, _, Left(error)) if !recoveredStimulusMap.contains(id) =>
+              TelemetryManager.warn(s"Resource $id is typed as a test but isn't a real assessmentTest, skipping: $error")
+            case (id, _, Left(_)) =>
+              TelemetryManager.info(s"Resource $id is typed as a test but is actually a stimulus document — recovered")
+            case (_, _, Right(_)) =>
           }
           None
         }
@@ -100,9 +130,10 @@ class QtiImportManager(storageService: StorageService) {
         val itemFilePath = extractor.resolveItemPath(extractionPath, resource.href)
         val itemFile = new File(extractionPath + File.separator + itemFilePath)
 
-        Try(itemParser.parse(itemFile)) match {
+        Try(itemParser.parse(itemFile, stimulusMap)) match {
           case Success(Right(parsedItem)) =>
-            val mediaMap = resolveAndUploadMedia(parsedItem.mediaRefs, itemFile)
+            val ownRefs = parsedItem.mediaRefs.filterNot(stimulusMediaUploadMap.contains)
+            val mediaMap = resolveAndUploadMedia(ownRefs, itemFile) ++ stimulusMediaUploadMap
             itemTransformer.transform(parsedItem, mediaMap) match {
               case Right(metadata) =>
                 transformedItems(resource.identifier) = metadata
@@ -229,45 +260,40 @@ class QtiImportManager(storageService: StorageService) {
     }
 
     val qtiIdToDoId = createdItemIds.toMap
-    val filteredHierarchy = payload.hierarchy.map { case (rootId, value) =>
-      value match {
-        case m: Map[String, AnyRef] @unchecked =>
-          val translatedChildren = m.get("children") match {
-            case Some(children: List[String] @unchecked) => children.flatMap(qtiIdToDoId.get)
-            case _ => List()
-          }
-          qsDoId -> (m + ("children" -> translatedChildren))
-        case other => qsDoId -> other
-      }
+    val childDoIds = payload.hierarchy.get(payload.questionSetIdentifier) match {
+      case Some(m: Map[String, AnyRef] @unchecked) =>
+        m.get("children") match {
+          case Some(children: List[String] @unchecked) => children.flatMap(qtiIdToDoId.get)
+          case _ => List()
+        }
+      case _ => List()
     }
 
-    val hierarchyContext = new java.util.HashMap[String, AnyRef]()
-    hierarchyContext.put("identifier", qsDoId)
-    hierarchyContext.put("graph_id", "domain")
-    hierarchyContext.put("version", "1.0")
-    hierarchyContext.put("objectType", "QuestionSet")
-    hierarchyContext.put("schemaName", "questionset")
-    val hierarchyInput: java.util.Map[String, AnyRef] = testTransformer.deepAsJava(Map[String, AnyRef](
-      "nodesModified" -> (
-        Map[String, AnyRef]("identifier" -> qsDoId, "nodeType" -> "QuestionSet", "metadata" -> payload.questionSetMetadata) ::
-        payload.nodesModified.values.filter(_.nodeType == "Question").toList.flatMap(n =>
-          qtiIdToDoId.get(n.identifier).map(doId =>
-            Map[String, AnyRef]("identifier" -> doId, "nodeType" -> "Question", "metadata" -> n.metadata)
-          )
+    if (childDoIds.isEmpty) {
+      TelemetryManager.warn(s"No successfully-created Questions to link into QuestionSet $qsDoId — skipping hierarchy update")
+    } else {
+      val hierarchyContext = new java.util.HashMap[String, AnyRef]()
+      hierarchyContext.put("graph_id", "domain")
+      hierarchyContext.put("version", "1.0")
+      hierarchyContext.put("objectType", "QuestionSet")
+      hierarchyContext.put("schemaName", "questionset")
+      val hierarchyInput: java.util.Map[String, AnyRef] = testTransformer.deepAsJava(Map[String, AnyRef](
+        "nodesModified" -> Map[String, AnyRef](),
+        "hierarchy" -> Map[String, AnyRef](
+          qsDoId -> Map[String, AnyRef]("children" -> childDoIds, "root" -> true.asInstanceOf[AnyRef])
         )
-      ),
-      "hierarchy" -> filteredHierarchy
-    )).asInstanceOf[java.util.Map[String, AnyRef]]
-    val hierarchyRequest = new Request(hierarchyContext, hierarchyInput, "updateHierarchy", "QuestionSet")
+      )).asInstanceOf[java.util.Map[String, AnyRef]]
+      val hierarchyRequest = new Request(hierarchyContext, hierarchyInput, "updateHierarchy", "QuestionSet")
 
-    Try(scala.concurrent.Await.result(
-      UpdateHierarchyManager.updateHierarchy(hierarchyRequest),
-      scala.concurrent.duration.Duration.Inf
-    )) match {
-      case Success(_) =>
-        TelemetryManager.info(s"Updated hierarchy for QuestionSet $qsDoId")
-      case Failure(ex) =>
-        TelemetryManager.warn(s"Hierarchy update failed (non-critical): ${ex.getMessage}")
+      Try(scala.concurrent.Await.result(
+        UpdateHierarchyManager.updateHierarchy(hierarchyRequest),
+        scala.concurrent.duration.Duration.Inf
+      )) match {
+        case Success(_) =>
+          TelemetryManager.info(s"Linked ${childDoIds.size} questions into QuestionSet $qsDoId")
+        case Failure(ex) =>
+          TelemetryManager.error(s"Hierarchy update failed for QuestionSet $qsDoId: ${ex.getMessage}", ex)
+      }
     }
 
     PersistResult(qsDoId, createdItemIds.toList, failedItems.toList)

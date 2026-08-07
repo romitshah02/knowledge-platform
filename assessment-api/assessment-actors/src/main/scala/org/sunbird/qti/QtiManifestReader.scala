@@ -42,6 +42,7 @@ class QtiManifestReader {
 
   private def isQti3Resource(resourceType: String): Boolean = {
     resourceType == QtiConstants.QTI_ITEM_V3_TYPE ||
-    resourceType == QtiConstants.QTI_TEST_V3_TYPE
+    resourceType == QtiConstants.QTI_TEST_V3_TYPE ||
+    resourceType == QtiConstants.QTI_STIMULUS_V3_TYPE
   }
 }

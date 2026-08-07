@@ -11,7 +11,10 @@ case class QuestionMetadata(
   body: String,
   interactions: Map[String, AnyRef],
   responseDeclaration: Map[String, AnyRef],
-  media: List[Map[String, AnyRef]] = List()
+  media: List[Map[String, AnyRef]] = List(),
+  responseProcessingTemplate: Option[String] = None,
+  maxScore: Option[Double] = None,
+  shuffleOptions: Boolean = false
 )
 
 class QtiItemTransformer {
@@ -58,6 +61,10 @@ class QtiItemTransformer {
     val interactions = buildInteractions(item.interaction, interactionTypes.head)
     val responseDeclaration = buildResponseDeclaration(item.interaction, item.responseDeclaration)
 
+    val maxScore = item.responseDeclaration.filter(_.mapping.nonEmpty).map { decl =>
+      decl.mappingUpperBound.getOrElse(decl.mapping.map(_.score).filter(_ > 0).sum)
+    }.orElse(item.outcomeMaxScore)
+
     Right(QuestionMetadata(
       identifier = item.identifier,
       primaryCategory = primaryCategory,
@@ -66,7 +73,10 @@ class QtiItemTransformer {
       body = bodyWithMedia,
       interactions = interactions,
       responseDeclaration = responseDeclaration,
-      media = media
+      media = media,
+      responseProcessingTemplate = item.responseProcessingTemplate,
+      maxScore = maxScore,
+      shuffleOptions = item.interaction.shuffle
     ))
   }
 
@@ -93,6 +103,13 @@ class QtiItemTransformer {
       case QtiConstants.QTI_HOTSPOT => "canvas"
       case QtiConstants.QTI_SLIDER => "slider"
       case QtiConstants.QTI_UPLOAD => "file-upload"
+      case QtiConstants.QTI_SELECT_POINT => "canvas"
+      case QtiConstants.QTI_POSITION_OBJECT => "canvas"
+      case QtiConstants.QTI_GRAPHIC_GAP_MATCH => "canvas"
+      case QtiConstants.QTI_GRAPHIC_ORDER => "canvas"
+      case QtiConstants.QTI_GRAPHIC_ASSOCIATE => "canvas"
+      case QtiConstants.QTI_MEDIA => "media"
+      case QtiConstants.QTI_DRAWING => "canvas"
       case _ => "choice"
     }
   }
@@ -102,17 +119,24 @@ class QtiItemTransformer {
       case QtiConstants.CHOICE_INTERACTION =>
         if (interaction.options.length == 2) Some((QtiConstants.BOOLEAN, "BOOL"))
         else Some((QtiConstants.MCQ, "MCQ"))
-      case QtiConstants.TEXT_ENTRY_INTERACTION => Some((QtiConstants.SA, "SA"))
+      case QtiConstants.TEXT_ENTRY_INTERACTION => Some((QtiConstants.FTB, "FTB"))
       case QtiConstants.EXTENDED_TEXT_INTERACTION => Some((QtiConstants.SA, "SA"))
       case QtiConstants.ORDER_INTERACTION => Some((QtiConstants.SEQ, "SEQ"))
       case QtiConstants.MATCH_INTERACTION => Some((QtiConstants.MTF, "MTF"))
-      case QtiConstants.ASSOCIATE_INTERACTION => Some((QtiConstants.REO, "REO"))
+      case QtiConstants.ASSOCIATE_INTERACTION => Some((QtiConstants.MTF, "MTF"))
       case QtiConstants.HOTTEXT_INTERACTION => Some((QtiConstants.QTI_HOTTEXT, "HOTTEXT"))
       case QtiConstants.GAP_MATCH_INTERACTION => Some((QtiConstants.QTI_GAP_MATCH, "GAP-MATCH"))
       case QtiConstants.INLINE_CHOICE_INTERACTION => Some((QtiConstants.QTI_INLINE_CHOICE, "INLINE-CHOICE"))
       case QtiConstants.HOTSPOT_INTERACTION => Some((QtiConstants.QTI_HOTSPOT, "HOTSPOT"))
       case QtiConstants.SLIDER_INTERACTION => Some((QtiConstants.QTI_SLIDER, "SLIDER"))
       case QtiConstants.UPLOAD_INTERACTION => Some((QtiConstants.QTI_UPLOAD, "UPLOAD"))
+      case QtiConstants.SELECT_POINT_INTERACTION => Some((QtiConstants.QTI_SELECT_POINT, "SELECT-POINT"))
+      case QtiConstants.POSITION_OBJECT_INTERACTION => Some((QtiConstants.QTI_POSITION_OBJECT, "POSITION-OBJECT"))
+      case QtiConstants.GRAPHIC_GAP_MATCH_INTERACTION => Some((QtiConstants.QTI_GRAPHIC_GAP_MATCH, "GRAPHIC-GAP-MATCH"))
+      case QtiConstants.GRAPHIC_ORDER_INTERACTION => Some((QtiConstants.QTI_GRAPHIC_ORDER, "GRAPHIC-ORDER"))
+      case QtiConstants.GRAPHIC_ASSOCIATE_INTERACTION => Some((QtiConstants.QTI_GRAPHIC_ASSOCIATE, "GRAPHIC-ASSOCIATE"))
+      case QtiConstants.MEDIA_INTERACTION => Some((QtiConstants.QTI_MEDIA, "MEDIA"))
+      case QtiConstants.DRAWING_INTERACTION => Some((QtiConstants.QTI_DRAWING, "DRAWING"))
       case _ => None
     }
   }
@@ -120,12 +144,11 @@ class QtiItemTransformer {
   private def validateInteraction(interaction: QtiInteraction): Option[String] = {
     interaction.interactionType match {
       case QtiConstants.CHOICE_INTERACTION =>
-        // Phase 1: single choice (maxChoices=1 or implicit) or 2-option (Boolean)
         if (interaction.options.isEmpty) {
           return Some(s"choiceInteraction has no simpleChoice elements")
         }
-        if (interaction.options.length > 1 && interaction.maxChoices.exists(_ > 2)) {
-          return Some(s"choiceInteraction with >2 choices not supported in Phase 1")
+        if (interaction.maxChoices.exists(_ != 1)) {
+          return Some(s"choiceInteraction with max-choices=${interaction.maxChoices.get} (multi-select) not supported in Phase 1")
         }
         None
 
@@ -147,6 +170,18 @@ class QtiItemTransformer {
 
       case QtiConstants.EXTENDED_TEXT_INTERACTION =>
         // Phase 1: any extended text
+        None
+
+      case QtiConstants.HOTTEXT_INTERACTION =>
+        if (interaction.options.isEmpty) Some(s"hottextInteraction has no qti-hottext elements") else None
+
+      case QtiConstants.GAP_MATCH_INTERACTION =>
+        if (interaction.options.isEmpty) Some(s"gapMatchInteraction has no qti-gap-text/qti-gap-img choices") else None
+
+      case QtiConstants.INLINE_CHOICE_INTERACTION =>
+        if (interaction.options.isEmpty) Some(s"inlineChoiceInteraction has no qti-inline-choice elements") else None
+
+      case QtiConstants.MEDIA_INTERACTION =>
         None
 
       case t if QtiConstants.PASSTHROUGH_INTERACTIONS.contains(t) =>
@@ -175,7 +210,32 @@ class QtiItemTransformer {
             "right" -> right.map(o => Map("value" -> o.identifier, "label" -> o.label))
           )
         )
-      case "hottext" | "gap-match" | "inline-choice" | "canvas" | "slider" | "file-upload" =>
+      case "hottext" =>
+        Map(
+          "type" -> canonicalType,
+          "options" -> interaction.options.map(o => Map("value" -> o.identifier, "label" -> o.label)),
+          "minChoices" -> interaction.minChoices.getOrElse(0).asInstanceOf[AnyRef],
+          "maxChoices" -> interaction.maxChoices.getOrElse(1).asInstanceOf[AnyRef]
+        )
+      case "gap-match" =>
+        Map(
+          "type" -> canonicalType,
+          "options" -> interaction.options.map(o => Map("value" -> o.identifier, "label" -> o.label))
+        )
+      case "inline-choice" =>
+        Map(
+          "type" -> "choice",
+          "options" -> interaction.options.map(o => Map("value" -> o.identifier, "label" -> o.label))
+        )
+      case "media" =>
+        Map(
+          "type" -> canonicalType,
+          "minPlays" -> interaction.minPlays.getOrElse(0).asInstanceOf[AnyRef],
+          "maxPlays" -> interaction.maxPlays.getOrElse(0).asInstanceOf[AnyRef],
+          "autostart" -> interaction.autostart.getOrElse(false).asInstanceOf[AnyRef],
+          "loop" -> interaction.loop.getOrElse(false).asInstanceOf[AnyRef]
+        )
+      case "canvas" | "slider" | "file-upload" =>
         Map("type" -> canonicalType, "markup" -> interaction.rawMarkup.getOrElse(""))
       case _ =>
         Map("type" -> canonicalType)
@@ -204,9 +264,10 @@ class QtiItemTransformer {
     }
 
     if (decl.mapping.nonEmpty) {
-      body = body + ("mapping" -> decl.mapping.map(m =>
-        Map("value" -> m.value, "score" -> m.score.asInstanceOf[AnyRef], "caseSensitive" -> m.caseSensitive.asInstanceOf[AnyRef])
-      ))
+      body = body + ("mapping" -> decl.mapping.map { m =>
+        val base = Map[String, AnyRef]("value" -> m.value, "score" -> m.score.asInstanceOf[AnyRef], "caseSensitive" -> m.caseSensitive.asInstanceOf[AnyRef])
+        if (m.key.nonEmpty) base + ("key" -> m.key) else base
+      })
     }
 
     Map(responseId -> body)

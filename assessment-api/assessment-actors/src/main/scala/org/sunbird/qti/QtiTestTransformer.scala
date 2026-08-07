@@ -81,7 +81,7 @@ class QtiTestTransformer {
       val qMetadata = transformedItems(itemId)
       val rawName = qMetadata.body.replaceAll("<[^>]*>", " ").replaceAll("\\s+", " ").trim.take(50).trim
       val qName = if (rawName.length >= 5) rawName else s"QTI Question: $itemId"
-      val questionMetadata = Map[String, AnyRef](
+      val baseMetadata = Map[String, AnyRef](
         "name" -> qName,
         "code" -> itemId,
         "mimeType" -> "application/vnd.sunbird.question",
@@ -93,9 +93,16 @@ class QtiTestTransformer {
         "interactionTypes" -> deepAsJava(qMetadata.interactionTypes),
         "interactions" -> deepAsJava(qMetadata.interactions),
         "responseDeclaration" -> deepAsJava(qMetadata.responseDeclaration),
+        "shuffleOptions" -> qMetadata.shuffleOptions.asInstanceOf[AnyRef],
         "status" -> "Draft",
         "origin" -> "qti",
         "originData" -> deepAsJava(Map("source" -> itemId))
+      )
+      val withResponseProcessing = qMetadata.responseProcessingTemplate.fold(baseMetadata)(t =>
+        baseMetadata + ("responseProcessing" -> deepAsJava(Map("template" -> t)))
+      )
+      val questionMetadata = qMetadata.maxScore.fold(withResponseProcessing)(m =>
+        withResponseProcessing + ("maxScore" -> m.asInstanceOf[AnyRef])
       ).filter {
         case (_, v: String) => v.nonEmpty
         case (_, m: java.util.Map[_, _]) => !m.isEmpty
