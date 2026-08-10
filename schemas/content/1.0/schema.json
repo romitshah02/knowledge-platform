@@ -60,6 +60,7 @@
         "application/vnd.ekstep.content-collection",
         "application/vnd.ekstep.plugin-archive",
         "application/vnd.ekstep.scorm-archive",
+        "application/vnd.ekstep.qti-archive",
         "application/vnd.ekstep.h5p-archive",
         "application/epub",
         "text/x-url",

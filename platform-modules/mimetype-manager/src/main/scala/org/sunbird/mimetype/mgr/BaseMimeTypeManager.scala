@@ -4,6 +4,7 @@ import java.io.{File, FileInputStream, FileOutputStream, IOException}
 import java.net.URL
 import java.nio.file.{Files, Path, Paths}
 import java.util.zip.{ZipEntry, ZipFile, ZipOutputStream}
+import javax.xml.parsers.SAXParserFactory
 
 import org.apache.commons.io.{FileUtils, FilenameUtils}
 import org.apache.commons.lang3.StringUtils
@@ -17,6 +18,7 @@ import org.sunbird.graph.dac.model.Node
 import org.sunbird.telemetry.logger.TelemetryManager
 
 import scala.concurrent.{ExecutionContext, Future}
+import scala.xml.Elem
 
 
 class BaseMimeTypeManager(implicit ss: StorageService) {
@@ -25,7 +27,7 @@ class BaseMimeTypeManager(implicit ss: StorageService) {
 	private val CONTENT_FOLDER = "cloud_storage.content.folder"
 	private val ARTIFACT_FOLDER = "cloud_storage.artifact.folder"
 	private val validator = new UrlValidator()
-	protected val extractableMimeTypes = List("application/vnd.ekstep.ecml-archive", "application/vnd.ekstep.html-archive", "application/vnd.ekstep.plugin-archive", "application/vnd.ekstep.h5p-archive", "application/vnd.ekstep.scorm-archive")
+	protected val extractableMimeTypes = List("application/vnd.ekstep.ecml-archive", "application/vnd.ekstep.html-archive", "application/vnd.ekstep.plugin-archive", "application/vnd.ekstep.h5p-archive", "application/vnd.ekstep.scorm-archive", "application/vnd.ekstep.qti-archive")
 	protected val extractablePackageExtensions = List(".zip", ".h5p", ".epub")
 	private val H5P_MIMETYPE: String = "application/vnd.ekstep.h5p-archive"
 	private val H5P_LIBRARY_PATH: String = Platform.config.getString("content.h5p.library.path")
@@ -134,6 +136,56 @@ class BaseMimeTypeManager(implicit ss: StorageService) {
 		expectedMimeType.equalsIgnoreCase(mimeType)
 	}
 
+	def getSecureXml(manifestFile: File): Elem = {
+		val spf = SAXParserFactory.newInstance()
+		spf.setNamespaceAware(true)
+		spf.setFeature("http://xml.org/sax/features/external-general-entities", false)
+		spf.setFeature("http://xml.org/sax/features/external-parameter-entities", false)
+		spf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
+		spf.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
+
+		val saxParser = spf.newSAXParser()
+		scala.xml.XML.withSAXParser(saxParser).loadFile(manifestFile)
+	}
+
+	def readManifestSchema(xml: Elem): (String, String) = {
+		val manifestMeta = xml \ "metadata"
+		val schema        = (manifestMeta \ "schema").text.trim.toLowerCase
+		val schemaVersion = (manifestMeta \ "schemaversion").text.trim.toLowerCase
+		(schema, schemaVersion)
+	}
+
+	def resolveManifestHref(manifestBase: String, resourcesBase: String, resourceBase: String, rawHref: String, parameters: String): String = {
+		val baseHref = manifestBase + resourcesBase + resourceBase + rawHref
+		if (parameters.nonEmpty) baseHref + parameters else baseHref
+	}
+
+	def validateManifestResourcePath(extractionBasePath: String, href: String, resourceLabel: String): String = {
+		if (href.isEmpty) {
+			throw new ClientException("ERR_INVALID_FILE", s"Invalid $resourceLabel path!")
+		}
+
+		val delimiterIndex = href.indexWhere(c => c == '?' || c == '#')
+		val cleanHref = if (delimiterIndex != -1) href.substring(0, delimiterIndex) else href
+
+		val basePath = Paths.get(extractionBasePath)
+		val resourcePath = basePath.resolve(cleanHref).normalize()
+
+		TelemetryManager.info(s"Validating $resourceLabel: basePath=$basePath, href=$cleanHref, combinedPath=${resourcePath.toAbsolutePath}")
+
+		if (!resourcePath.startsWith(basePath)) {
+			TelemetryManager.error(s"ERR_INVALID_FILE:: Potential path traversal detected: $cleanHref")
+			throw new ClientException("ERR_INVALID_FILE", s"Invalid $resourceLabel path!")
+		}
+
+		if (!resourcePath.toFile.exists() || resourcePath.toFile.isDirectory) {
+			TelemetryManager.error(s"ERR_INVALID_FILE:: $resourceLabel defined in imsmanifest.xml does not exist or is a directory: $cleanHref")
+			throw new ClientException("ERR_INVALID_FILE", s"The $resourceLabel '$cleanHref' specified in imsmanifest.xml is missing or invalid!")
+		}
+
+		href
+	}
+
 	def extractPackage(file: File, basePath: String) = {
 		val baseDir = Paths.get(basePath).normalize()
 		Files.createDirectories(baseDir)
@@ -214,11 +266,12 @@ class BaseMimeTypeManager(implicit ss: StorageService) {
 			case "application/vnd.ekstep.h5p-archive" => baseFolder + File.separator + "h5p" + File.separator + objectId + DASH + pathSuffix
 			case "application/vnd.ekstep.plugin-archive" => CONTENT_PLUGINS + File.separator + objectId + DASH + pathSuffix
 			case "application/vnd.ekstep.scorm-archive" => baseFolder + File.separator + "scorm" + File.separator + objectId + DASH + pathSuffix
+			case "application/vnd.ekstep.qti-archive" => baseFolder + File.separator + "qti" + File.separator + objectId + DASH + pathSuffix
 			case _ => ""
 		}
 	}
 
-	def extractPackageInCloud(objectId: String, uploadFile: File, node: Node, extractionType: String, slugFile: Boolean)(implicit ss: StorageService) = {
+	def extractPackageInCloud(objectId: String, uploadFile: File, node: Node, extractionType: String, slugFile: Boolean)(implicit ss: StorageService): Array[String] = {
 		val file = Slug.createSlugFile(uploadFile)
 		val mimeType = node.getMetadata.get("mimeType").asInstanceOf[String]
 		validationForCloudExtraction(file, extractionType, mimeType)
@@ -226,7 +279,7 @@ class BaseMimeTypeManager(implicit ss: StorageService) {
 			val extractionBasePath = getBasePath(objectId)
 				extractPackage(file, extractionBasePath)
 				ss.uploadDirectory(getExtractionPath(objectId, node, extractionType, mimeType), new File(extractionBasePath), Option(slugFile))
-		}
+		} else Array.empty[String]
 	}
 
 	def extractH5PPackageInCloud(objectId: String, extractionBasePath: String, node: Node, extractionType: String, slugFile: Boolean)(implicit ec: ExecutionContext): Future[List[String]] = {
