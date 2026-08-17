@@ -54,6 +54,16 @@ curl -L -X POST '{{host}}/object/category/definition/v4/create' \
                   "href": { "type": "string" }
                 }
               }
+            },
+            "timeLimits": {
+              "type": "object",
+              "properties": {
+                "min": { "type": "number" },
+                "max": { "type": "number" }
+              }
+            },
+            "maxAttempts": {
+              "type": "number"
             }
           }
         }
