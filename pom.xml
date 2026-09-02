@@ -174,7 +174,7 @@
 			<dependency>
 				<groupId>org.apache.thrift</groupId>
 				<artifactId>libthrift</artifactId>
-				<version>0.23.0</version>
+				<version>0.24.0</version>
 			</dependency>
 			<!-- Security: cassandra-all CVE-2025-23015, CVE-2020-17516, CVE-2020-13946 -->
 			<dependency>
